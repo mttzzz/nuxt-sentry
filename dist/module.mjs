@@ -155,6 +155,7 @@ const module$1 = defineNuxtModule({
         },
         renderChunk(code, chunk) {
           if (!chunk.isEntry) return null;
+          if (chunk.fileName === "instrument.server.mjs") return null;
           return { code: `import './instrument.server.mjs';
 ${code}`, map: null };
         }

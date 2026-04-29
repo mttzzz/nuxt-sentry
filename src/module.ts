@@ -228,8 +228,10 @@ export default defineNuxtModule<ModuleOptions>({
             fileName: 'instrument.server.mjs',
           })
         },
-        renderChunk(code: string, chunk: { isEntry?: boolean }) {
+        renderChunk(code: string, chunk: { isEntry?: boolean, fileName?: string }) {
           if (!chunk.isEntry) return null
+          /* Не инжектим self-import в сам instrument-чанк (TDZ + бесконечный цикл). */
+          if (chunk.fileName === 'instrument.server.mjs') return null
           return { code: `import './instrument.server.mjs';\n${code}`, map: null }
         },
       })
