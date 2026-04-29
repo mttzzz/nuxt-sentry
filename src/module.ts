@@ -219,6 +219,13 @@ export default defineNuxtModule<ModuleOptions>({
         ? nitroConfig.rollupConfig.plugins
         : [nitroConfig.rollupConfig.plugins]
 
+      const instrumentReplacements: Record<string, string> = {
+        __NUXT_SENTRY_DSN__: serializeBuildLiteral(resolved.dsn),
+        __NUXT_SENTRY_CACHE_PREFIX__: serializeBuildLiteral(resolved.cachePrefix),
+        __NUXT_SENTRY_TRACES_SAMPLE_RATE__: serializeBuildLiteral(resolved.tracesSampleRate),
+        __NUXT_SENTRY_IGNORED_ROUTES__: serializeBuildLiteral(resolved.ignoredRoutes),
+      }
+
       plugins.push({
         name: '@mttzzz/nuxt-sentry:instrument-injection',
         buildStart() {
@@ -229,9 +236,19 @@ export default defineNuxtModule<ModuleOptions>({
           })
         },
         renderChunk(code: string, chunk: { isEntry?: boolean, fileName?: string }) {
+          if (chunk.fileName === 'instrument.server.mjs') {
+            /*
+             * Подменяем placeholder'ы на JS-литералы build-time. Это надёжнее
+             * import'а из общего alias-конфига: instrument грузится первым, до
+             * index.mjs, и любой межчанковый импорт даёт TDZ.
+             */
+            let replaced = code
+            for (const [token, value] of Object.entries(instrumentReplacements)) {
+              replaced = replaced.replaceAll(token, value)
+            }
+            return { code: replaced, map: null }
+          }
           if (!chunk.isEntry) return null
-          /* Не инжектим self-import в сам instrument-чанк (TDZ + бесконечный цикл). */
-          if (chunk.fileName === 'instrument.server.mjs') return null
           return { code: `import './instrument.server.mjs';\n${code}`, map: null }
         },
       })

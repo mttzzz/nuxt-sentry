@@ -4,23 +4,26 @@
  * `@prisma/instrumentation` + Redis OTEL успели обернуть драйверы.
  *
  * Project-specific значения (DSN, cachePrefix, tracesSampleRate, ignoredRoutes)
- * приходят из build-time темплейта `#build/nuxt-sentry-build-config`,
- * сгенерированного `addTemplate` в src/module.ts.
+ * подставляются build-time через string-substitution в `renderChunk`-хуке
+ * (см. src/module.ts). НЕ импортируем их через alias — instrument грузится
+ * раньше index.mjs, импорт оттуда → TDZ.
  */
 
 import { PrismaInstrumentation } from '@prisma/instrumentation'
 import * as Sentry from '@sentry/bun'
 
-// @ts-expect-error virtual module emitted by module.ts via addTemplate + nitro.alias
-import { cachePrefix, dsn, ignoredRoutes, tracesSampleRate } from '#nuxt-sentry/config'
-
 import { createPrismaSpanNormalizer } from './utils/prisma-span-normalize'
 import { shouldEnableServerSentry } from './utils/sentry-enabled'
+
+declare const __NUXT_SENTRY_DSN__: string
+declare const __NUXT_SENTRY_CACHE_PREFIX__: string
+declare const __NUXT_SENTRY_TRACES_SAMPLE_RATE__: number
+declare const __NUXT_SENTRY_IGNORED_ROUTES__: string[]
 
 const normalizePrismaQuerySpan = createPrismaSpanNormalizer()
 
 Sentry.init({
-  dsn,
+  dsn: __NUXT_SENTRY_DSN__,
 
   enabled: shouldEnableServerSentry({
     nodeEnv: process.env.NODE_ENV,
@@ -29,7 +32,7 @@ Sentry.init({
 
   integrations: [
     Sentry.redisIntegration({
-      cachePrefixes: [cachePrefix],
+      cachePrefixes: [__NUXT_SENTRY_CACHE_PREFIX__],
     }),
     Sentry.prismaIntegration({
       prismaInstrumentation: new PrismaInstrumentation(),
@@ -40,10 +43,10 @@ Sentry.init({
     if (name?.startsWith('queue.publish/') || name?.startsWith('queue.process/')) {
       return 1
     }
-    if (name && (ignoredRoutes as string[]).some((route: string) => name.startsWith(route))) {
+    if (name && __NUXT_SENTRY_IGNORED_ROUTES__.some((route: string) => name.startsWith(route))) {
       return 0
     }
-    return tracesSampleRate
+    return __NUXT_SENTRY_TRACES_SAMPLE_RATE__
   },
 
   sendDefaultPii: true,

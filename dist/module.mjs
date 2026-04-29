@@ -144,6 +144,12 @@ const module$1 = defineNuxtModule({
       nitroConfig.rollupConfig ||= {};
       nitroConfig.rollupConfig.plugins ||= [];
       const plugins = Array.isArray(nitroConfig.rollupConfig.plugins) ? nitroConfig.rollupConfig.plugins : [nitroConfig.rollupConfig.plugins];
+      const instrumentReplacements = {
+        __NUXT_SENTRY_DSN__: serializeBuildLiteral(resolved.dsn),
+        __NUXT_SENTRY_CACHE_PREFIX__: serializeBuildLiteral(resolved.cachePrefix),
+        __NUXT_SENTRY_TRACES_SAMPLE_RATE__: serializeBuildLiteral(resolved.tracesSampleRate),
+        __NUXT_SENTRY_IGNORED_ROUTES__: serializeBuildLiteral(resolved.ignoredRoutes)
+      };
       plugins.push({
         name: "@mttzzz/nuxt-sentry:instrument-injection",
         buildStart() {
@@ -154,8 +160,14 @@ const module$1 = defineNuxtModule({
           });
         },
         renderChunk(code, chunk) {
+          if (chunk.fileName === "instrument.server.mjs") {
+            let replaced = code;
+            for (const [token, value] of Object.entries(instrumentReplacements)) {
+              replaced = replaced.replaceAll(token, value);
+            }
+            return { code: replaced, map: null };
+          }
           if (!chunk.isEntry) return null;
-          if (chunk.fileName === "instrument.server.mjs") return null;
           return { code: `import './instrument.server.mjs';
 ${code}`, map: null };
         }

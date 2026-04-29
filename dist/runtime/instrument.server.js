@@ -1,18 +1,17 @@
 import { PrismaInstrumentation } from "@prisma/instrumentation";
 import * as Sentry from "@sentry/bun";
-import { cachePrefix, dsn, ignoredRoutes, tracesSampleRate } from "#nuxt-sentry/config";
 import { createPrismaSpanNormalizer } from "./utils/prisma-span-normalize.js";
 import { shouldEnableServerSentry } from "./utils/sentry-enabled.js";
 const normalizePrismaQuerySpan = createPrismaSpanNormalizer();
 Sentry.init({
-  dsn,
+  dsn: __NUXT_SENTRY_DSN__,
   enabled: shouldEnableServerSentry({
     nodeEnv: process.env.NODE_ENV,
     sentryDisabled: process.env.SENTRY_DISABLED
   }),
   integrations: [
     Sentry.redisIntegration({
-      cachePrefixes: [cachePrefix]
+      cachePrefixes: [__NUXT_SENTRY_CACHE_PREFIX__]
     }),
     Sentry.prismaIntegration({
       prismaInstrumentation: new PrismaInstrumentation()
@@ -22,10 +21,10 @@ Sentry.init({
     if (name?.startsWith("queue.publish/") || name?.startsWith("queue.process/")) {
       return 1;
     }
-    if (name && ignoredRoutes.some((route) => name.startsWith(route))) {
+    if (name && __NUXT_SENTRY_IGNORED_ROUTES__.some((route) => name.startsWith(route))) {
       return 0;
     }
-    return tracesSampleRate;
+    return __NUXT_SENTRY_TRACES_SAMPLE_RATE__;
   },
   sendDefaultPii: true,
   attachStacktrace: true,
