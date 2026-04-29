@@ -1,0 +1,72 @@
+{
+  "name": "@mttzzz/nuxt-sentry",
+  "version": "0.1.0",
+  "description": "Nuxt 4 module: shared Sentry boilerplate (server init, client init, Prisma span normalization, nitro error capture, tunnel)",
+  "repository": "github:mttzzz/nuxt-sentry",
+  "license": "MIT",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/types.d.mts",
+      "import": "./dist/module.mjs"
+    }
+  },
+  "main": "./dist/module.mjs",
+  "typesVersions": {
+    "*": {
+      ".": [
+        "./dist/types.d.mts"
+      ]
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "workspaces": [
+    "playground"
+  ],
+  "scripts": {
+    "prepack": "nuxt-module-build build",
+    "dev": "npm run dev:prepare && nuxt dev playground",
+    "dev:build": "nuxt build playground",
+    "dev:prepare": "nuxt-module-build build --stub && nuxt-module-build prepare && nuxt prepare playground",
+    "lint": "eslint .",
+    "test": "vitest run",
+    "test:watch": "vitest watch",
+    "test:types": "vue-tsc --noEmit && cd playground && vue-tsc --noEmit"
+  },
+  "dependencies": {
+    "@nuxt/kit": "^4.4.2",
+    "defu": "^6.1.4",
+    "h3": "^1.15.0"
+  },
+  "devDependencies": {
+    "@mttzzz/nuxt-stale-deploy-guard": "github:mttzzz/nuxt-stale-deploy-guard#main",
+    "@nuxt/devtools": "^3.2.4",
+    "@nuxt/eslint-config": "^1.15.2",
+    "@nuxt/module-builder": "^1.0.2",
+    "@nuxt/schema": "^4.4.2",
+    "@nuxt/test-utils": "^4.0.3",
+    "@prisma/instrumentation": "^7.8.0",
+    "@sentry/bun": "^10.50.0",
+    "@sentry/core": "^10.50.0",
+    "@sentry/vite-plugin": "^5.2.0",
+    "@sentry/vue": "^10.50.0",
+    "@types/node": "latest",
+    "eslint": "^10.2.1",
+    "nuxt": "^4.4.2",
+    "typescript": "~6.0.3",
+    "vitest": "^4.1.5",
+    "vue-tsc": "^3.2.7"
+  },
+  "peerDependencies": {
+    "@prisma/instrumentation": "^7.0.0",
+    "@sentry/bun": "^10.0.0",
+    "@sentry/vite-plugin": "^5.0.0",
+    "@sentry/vue": "^10.0.0",
+    "nuxt": "^4.0.0"
+  },
+  "peerDependenciesMeta": {
+    "@prisma/instrumentation": { "optional": true }
+  }
+}

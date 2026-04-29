@@ -1,0 +1,18 @@
+{
+  "private": true,
+  "name": "nuxt-sentry-playground",
+  "type": "module",
+  "scripts": {
+    "dev": "nuxt dev",
+    "build": "nuxt build",
+    "generate": "nuxt generate"
+  },
+  "dependencies": {
+    "@mttzzz/nuxt-stale-deploy-guard": "github:mttzzz/nuxt-stale-deploy-guard#main",
+    "@prisma/instrumentation": "^7.8.0",
+    "@sentry/bun": "^10.50.0",
+    "@sentry/vite-plugin": "^5.2.0",
+    "@sentry/vue": "^10.50.0",
+    "nuxt": "^4.4.2"
+  }
+}
