@@ -1,26 +1,50 @@
 /*
  * Server Sentry init. Этот файл инжектится модулем как top-level rollup chunk
  * в Nitro server entry — выполняется ДО любого application code, чтобы
- * `@prisma/instrumentation` + Redis OTEL успели обернуть драйверы.
+ * Sentry + OTEL успели обернуть HTTP/Bun.serve и выбранный DB-драйвер.
  *
- * Project-specific значения (DSN, cachePrefix, tracesSampleRate, ignoredRoutes)
+ * Project-specific значения (DSN, cachePrefix, db, tracesSampleRate, ignoredRoutes)
  * подставляются build-time через string-substitution в `renderChunk`-хуке
  * (см. src/module.ts). НЕ импортируем их через alias — instrument грузится
  * раньше index.mjs, импорт оттуда → TDZ.
  */
 
-import { PrismaInstrumentation } from '@prisma/instrumentation'
+import type { Integration } from '@sentry/core'
 import * as Sentry from '@sentry/bun'
 
-import { createPrismaSpanNormalizer } from './utils/prisma-span-normalize'
 import { shouldEnableServerSentry } from './utils/sentry-enabled'
 
 declare const __NUXT_SENTRY_DSN__: string
 declare const __NUXT_SENTRY_CACHE_PREFIX__: string
+declare const __NUXT_SENTRY_DB__: 'postgres-js' | 'pg' | 'mysql2' | false
 declare const __NUXT_SENTRY_TRACES_SAMPLE_RATE__: number
 declare const __NUXT_SENTRY_IGNORED_ROUTES__: string[]
 
-const normalizePrismaQuerySpan = createPrismaSpanNormalizer()
+function createDbIntegration(): Integration | undefined {
+  switch (__NUXT_SENTRY_DB__) {
+    case 'postgres-js':
+      return Sentry.postgresJsIntegration()
+    case 'pg':
+      return Sentry.postgresIntegration()
+    case 'mysql2':
+      return Sentry.mysql2Integration()
+    case false:
+      return undefined
+  }
+}
+
+const dbIntegration = createDbIntegration()
+const integrations: Integration[] = [
+  /* Explicitly keep Bun HTTP transactions even if SDK defaults change. */
+  Sentry.bunServerIntegration(),
+  Sentry.redisIntegration({
+    cachePrefixes: [__NUXT_SENTRY_CACHE_PREFIX__],
+  }),
+]
+
+if (dbIntegration) {
+  integrations.push(dbIntegration)
+}
 
 Sentry.init({
   dsn: __NUXT_SENTRY_DSN__,
@@ -30,14 +54,7 @@ Sentry.init({
     sentryDisabled: process.env.SENTRY_DISABLED,
   }),
 
-  integrations: [
-    Sentry.redisIntegration({
-      cachePrefixes: [__NUXT_SENTRY_CACHE_PREFIX__],
-    }),
-    Sentry.prismaIntegration({
-      prismaInstrumentation: new PrismaInstrumentation(),
-    }),
-  ],
+  integrations,
 
   tracesSampler: ({ name }: { name?: string }) => {
     if (name?.startsWith('queue.publish/') || name?.startsWith('queue.process/')) {
@@ -53,8 +70,6 @@ Sentry.init({
   attachStacktrace: true,
   normalizeDepth: 8,
   enableLogs: true,
-
-  beforeSendSpan: span => normalizePrismaQuerySpan(span),
 
   debug: false,
 })

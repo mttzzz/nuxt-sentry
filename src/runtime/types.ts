@@ -1,3 +1,15 @@
+/**
+ * Какую DB-инструментацию подключать в `Sentry.init`.
+ *   - `'prisma'`     → `@prisma/instrumentation` + `Sentry.prismaIntegration` (требует peer `@prisma/instrumentation`)
+ *   - `'postgres-js'`→ `Sentry.postgresJsIntegration` (драйвер `postgres`, aka postgres-js — для drizzle/postgres-js)
+ *   - `'pg'`         → `Sentry.postgresIntegration` (драйвер `pg`)
+ *   - `'mysql2'`     → `Sentry.mysql2Integration` (драйвер `mysql2`)
+ *   - `false`        → не подключать DB-инструментацию вообще
+ *
+ * Default: `'prisma'` (back-compat с проектами, которые ставят пакет до v0.2.0).
+ */
+export type SentryDbInstrumentation = 'prisma' | 'postgres-js' | 'pg' | 'mysql2' | false
+
 export interface ModuleOptions {
   /** Sentry DSN. Required. */
   dsn: string
@@ -7,6 +19,8 @@ export interface ModuleOptions {
   cachePrefix: string
   /** Sentry org slug. Default: 'pushka-biz'. */
   org?: string
+  /** DB-инструментация для server `Sentry.init`. Default: `'prisma'`. См. {@link SentryDbInstrumentation}. */
+  db?: SentryDbInstrumentation
   /** Endpoint для tunnel-проксирования client → ingest. Default: '/api/sentry-tunnel'. */
   tunnelEndpoint?: string
   /** Default: 0.5 */
@@ -39,6 +53,7 @@ export interface ResolvedModuleOptions {
   project: string
   cachePrefix: string
   org: string
+  db: SentryDbInstrumentation
   tunnelEndpoint: string
   tracesSampleRate: number
   replaysSessionSampleRate: number

@@ -1,35 +1,24 @@
+import { PrismaInstrumentation } from "@prisma/instrumentation";
 import * as Sentry from "@sentry/bun";
+import { createPrismaSpanNormalizer } from "./utils/prisma-span-normalize.js";
 import { shouldEnableServerSentry } from "./utils/sentry-enabled.js";
-function createDbIntegration() {
-  switch (__NUXT_SENTRY_DB__) {
-    case "postgres-js":
-      return Sentry.postgresJsIntegration();
-    case "pg":
-      return Sentry.postgresIntegration();
-    case "mysql2":
-      return Sentry.mysql2Integration();
-    case false:
-      return void 0;
-  }
-}
-const dbIntegration = createDbIntegration();
-const integrations = [
-  /* Explicitly keep Bun HTTP transactions even if SDK defaults change. */
-  Sentry.bunServerIntegration(),
-  Sentry.redisIntegration({
-    cachePrefixes: [__NUXT_SENTRY_CACHE_PREFIX__]
-  })
-];
-if (dbIntegration) {
-  integrations.push(dbIntegration);
-}
+const normalizePrismaQuerySpan = createPrismaSpanNormalizer();
 Sentry.init({
   dsn: __NUXT_SENTRY_DSN__,
   enabled: shouldEnableServerSentry({
     nodeEnv: process.env.NODE_ENV,
     sentryDisabled: process.env.SENTRY_DISABLED
   }),
-  integrations,
+  integrations: [
+    /* Explicitly keep Bun HTTP transactions even if SDK defaults change. */
+    Sentry.bunServerIntegration(),
+    Sentry.redisIntegration({
+      cachePrefixes: [__NUXT_SENTRY_CACHE_PREFIX__]
+    }),
+    Sentry.prismaIntegration({
+      prismaInstrumentation: new PrismaInstrumentation()
+    })
+  ],
   tracesSampler: ({ name }) => {
     if (name?.startsWith("queue.publish/") || name?.startsWith("queue.process/")) {
       return 1;
@@ -43,5 +32,6 @@ Sentry.init({
   attachStacktrace: true,
   normalizeDepth: 8,
   enableLogs: true,
+  beforeSendSpan: (span) => normalizePrismaQuerySpan(span),
   debug: false
 });

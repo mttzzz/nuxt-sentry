@@ -5,10 +5,11 @@ import { defu } from 'defu'
 import type { ModuleOptions, PublicRuntimeSentryConfig, ResolvedModuleOptions } from './runtime/types'
 import { buildTunnelIngestUrl } from './runtime/utils/tunnel-ingest-url'
 
-export type { ModuleOptions } from './runtime/types'
+export type { ModuleOptions, SentryDbInstrumentation } from './runtime/types'
 
 const DEFAULTS = {
   org: 'pushka-biz',
+  db: 'prisma' as const,
   tunnelEndpoint: '/api/sentry-tunnel',
   tracesSampleRate: 0.5,
   replaysSessionSampleRate: 0.1,
@@ -81,6 +82,7 @@ export default defineNuxtModule<ModuleOptions>({
       project: opts.project,
       cachePrefix: opts.cachePrefix,
       org: opts.org ?? DEFAULTS.org,
+      db: opts.db ?? DEFAULTS.db,
       tunnelEndpoint: opts.tunnelEndpoint ?? DEFAULTS.tunnelEndpoint,
       tracesSampleRate: opts.tracesSampleRate ?? DEFAULTS.tracesSampleRate,
       replaysSessionSampleRate: opts.replaysSessionSampleRate ?? DEFAULTS.replaysSessionSampleRate,
@@ -127,6 +129,7 @@ export default defineNuxtModule<ModuleOptions>({
           `export const dsn = ${serializeBuildLiteral(resolved.dsn)}`,
           `export const project = ${serializeBuildLiteral(resolved.project)}`,
           `export const cachePrefix = ${serializeBuildLiteral(resolved.cachePrefix)}`,
+          `export const db = ${serializeBuildLiteral(resolved.db)}`,
           `export const tunnelIngestUrl = ${serializeBuildLiteral(tunnelIngestUrl)}`,
           `export const tracesSampleRate = ${serializeBuildLiteral(resolved.tracesSampleRate)}`,
           `export const ignoredRoutes = ${serializeBuildLiteral(resolved.ignoredRoutes)}`,
@@ -210,7 +213,9 @@ export default defineNuxtModule<ModuleOptions>({
     nuxt.hook('nitro:config', (nitroConfig) => {
       if (process.env.NODE_ENV !== 'production') return
 
-      const instrumentPath = resolver.resolve('./runtime/instrument.server')
+      const instrumentPath = resolver.resolve(
+        resolved.db === 'prisma' ? './runtime/instrument.server.prisma' : './runtime/instrument.server',
+      )
 
       nitroConfig.rollupConfig ||= {}
       nitroConfig.rollupConfig.plugins ||= []
@@ -222,6 +227,7 @@ export default defineNuxtModule<ModuleOptions>({
       const instrumentReplacements: Record<string, string> = {
         __NUXT_SENTRY_DSN__: serializeBuildLiteral(resolved.dsn),
         __NUXT_SENTRY_CACHE_PREFIX__: serializeBuildLiteral(resolved.cachePrefix),
+        __NUXT_SENTRY_DB__: serializeBuildLiteral(resolved.db),
         __NUXT_SENTRY_TRACES_SAMPLE_RATE__: serializeBuildLiteral(resolved.tracesSampleRate),
         __NUXT_SENTRY_IGNORED_ROUTES__: serializeBuildLiteral(resolved.ignoredRoutes),
       }

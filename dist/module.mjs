@@ -5,6 +5,7 @@ import { buildTunnelIngestUrl } from '../dist/runtime/utils/tunnel-ingest-url.js
 
 const DEFAULTS = {
   org: "pushka-biz",
+  db: "prisma",
   tunnelEndpoint: "/api/sentry-tunnel",
   tracesSampleRate: 0.5,
   replaysSessionSampleRate: 0.1,
@@ -60,6 +61,7 @@ const module$1 = defineNuxtModule({
       project: opts.project,
       cachePrefix: opts.cachePrefix,
       org: opts.org ?? DEFAULTS.org,
+      db: opts.db ?? DEFAULTS.db,
       tunnelEndpoint: opts.tunnelEndpoint ?? DEFAULTS.tunnelEndpoint,
       tracesSampleRate: opts.tracesSampleRate ?? DEFAULTS.tracesSampleRate,
       replaysSessionSampleRate: opts.replaysSessionSampleRate ?? DEFAULTS.replaysSessionSampleRate,
@@ -94,6 +96,7 @@ const module$1 = defineNuxtModule({
         `export const dsn = ${serializeBuildLiteral(resolved.dsn)}`,
         `export const project = ${serializeBuildLiteral(resolved.project)}`,
         `export const cachePrefix = ${serializeBuildLiteral(resolved.cachePrefix)}`,
+        `export const db = ${serializeBuildLiteral(resolved.db)}`,
         `export const tunnelIngestUrl = ${serializeBuildLiteral(tunnelIngestUrl)}`,
         `export const tracesSampleRate = ${serializeBuildLiteral(resolved.tracesSampleRate)}`,
         `export const ignoredRoutes = ${serializeBuildLiteral(resolved.ignoredRoutes)}`,
@@ -140,13 +143,16 @@ const module$1 = defineNuxtModule({
     }
     nuxt.hook("nitro:config", (nitroConfig) => {
       if (process.env.NODE_ENV !== "production") return;
-      const instrumentPath = resolver.resolve("./runtime/instrument.server");
+      const instrumentPath = resolver.resolve(
+        resolved.db === "prisma" ? "./runtime/instrument.server.prisma" : "./runtime/instrument.server"
+      );
       nitroConfig.rollupConfig ||= {};
       nitroConfig.rollupConfig.plugins ||= [];
       const plugins = Array.isArray(nitroConfig.rollupConfig.plugins) ? nitroConfig.rollupConfig.plugins : [nitroConfig.rollupConfig.plugins];
       const instrumentReplacements = {
         __NUXT_SENTRY_DSN__: serializeBuildLiteral(resolved.dsn),
         __NUXT_SENTRY_CACHE_PREFIX__: serializeBuildLiteral(resolved.cachePrefix),
+        __NUXT_SENTRY_DB__: serializeBuildLiteral(resolved.db),
         __NUXT_SENTRY_TRACES_SAMPLE_RATE__: serializeBuildLiteral(resolved.tracesSampleRate),
         __NUXT_SENTRY_IGNORED_ROUTES__: serializeBuildLiteral(resolved.ignoredRoutes)
       };
