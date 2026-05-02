@@ -7,10 +7,10 @@ const DEFAULTS = {
   org: "pushka-biz",
   db: "prisma",
   tunnelEndpoint: "/api/sentry-tunnel",
-  tracesSampleRate: 0.5,
-  queueTracesSampleRate: 1,
+  tracesSampleRate: 0.1,
+  queueTracesSampleRate: 0.1,
   replaysSessionSampleRate: 0.1,
-  replaysOnErrorSampleRate: 1,
+  replaysOnErrorSampleRate: 0.1,
   tracePropagationTargets: [/^\/api\//],
   additionalIgnorePatterns: [],
   ignoredRoutes: [

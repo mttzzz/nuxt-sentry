@@ -23,13 +23,13 @@ export interface ModuleOptions {
   db?: SentryDbInstrumentation
   /** Endpoint для tunnel-проксирования client → ingest. Default: '/api/sentry-tunnel'. */
   tunnelEndpoint?: string
-  /** Default: 0.5 */
+  /** Default: 0.1 */
   tracesSampleRate?: number
-  /** Sample rate для custom queue.publish/queue.process транзакций. Default: 1 (back-compat). */
+  /** Sample rate для custom queue.publish/queue.process транзакций. Default: 0.1. */
   queueTracesSampleRate?: number
   /** Default: 0.1 */
   replaysSessionSampleRate?: number
-  /** Default: 1 */
+  /** Default: 0.1 */
   replaysOnErrorSampleRate?: number
   /** Default: [/^\/api\//] */
   tracePropagationTargets?: (string | RegExp)[]
