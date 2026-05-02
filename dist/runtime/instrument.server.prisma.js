@@ -21,7 +21,7 @@ Sentry.init({
   ],
   tracesSampler: ({ name }) => {
     if (name?.startsWith("queue.publish/") || name?.startsWith("queue.process/")) {
-      return 1;
+      return __NUXT_SENTRY_QUEUE_TRACES_SAMPLE_RATE__;
     }
     if (name && __NUXT_SENTRY_IGNORED_ROUTES__.some((route) => name.startsWith(route))) {
       return 0;

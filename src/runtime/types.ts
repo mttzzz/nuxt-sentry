@@ -25,6 +25,8 @@ export interface ModuleOptions {
   tunnelEndpoint?: string
   /** Default: 0.5 */
   tracesSampleRate?: number
+  /** Sample rate для custom queue.publish/queue.process транзакций. Default: 1 (back-compat). */
+  queueTracesSampleRate?: number
   /** Default: 0.1 */
   replaysSessionSampleRate?: number
   /** Default: 1 */
@@ -56,6 +58,7 @@ export interface ResolvedModuleOptions {
   db: SentryDbInstrumentation
   tunnelEndpoint: string
   tracesSampleRate: number
+  queueTracesSampleRate: number
   replaysSessionSampleRate: number
   replaysOnErrorSampleRate: number
   tracePropagationTargets: (string | RegExp)[]
@@ -80,6 +83,7 @@ export interface PublicRuntimeSentryConfig {
   org: string
   tunnelEndpoint: string
   tracesSampleRate: number
+  queueTracesSampleRate: number
   replaysSessionSampleRate: number
   replaysOnErrorSampleRate: number
   ignoredRoutes: string[]

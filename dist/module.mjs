@@ -8,6 +8,7 @@ const DEFAULTS = {
   db: "prisma",
   tunnelEndpoint: "/api/sentry-tunnel",
   tracesSampleRate: 0.5,
+  queueTracesSampleRate: 1,
   replaysSessionSampleRate: 0.1,
   replaysOnErrorSampleRate: 1,
   tracePropagationTargets: [/^\/api\//],
@@ -64,6 +65,7 @@ const module$1 = defineNuxtModule({
       db: opts.db ?? DEFAULTS.db,
       tunnelEndpoint: opts.tunnelEndpoint ?? DEFAULTS.tunnelEndpoint,
       tracesSampleRate: opts.tracesSampleRate ?? DEFAULTS.tracesSampleRate,
+      queueTracesSampleRate: opts.queueTracesSampleRate ?? DEFAULTS.queueTracesSampleRate,
       replaysSessionSampleRate: opts.replaysSessionSampleRate ?? DEFAULTS.replaysSessionSampleRate,
       replaysOnErrorSampleRate: opts.replaysOnErrorSampleRate ?? DEFAULTS.replaysOnErrorSampleRate,
       tracePropagationTargets: opts.tracePropagationTargets ?? DEFAULTS.tracePropagationTargets,
@@ -80,6 +82,7 @@ const module$1 = defineNuxtModule({
       org: resolved.org,
       tunnelEndpoint: resolved.tunnelEndpoint,
       tracesSampleRate: resolved.tracesSampleRate,
+      queueTracesSampleRate: resolved.queueTracesSampleRate,
       replaysSessionSampleRate: resolved.replaysSessionSampleRate,
       replaysOnErrorSampleRate: resolved.replaysOnErrorSampleRate,
       ignoredRoutes: resolved.ignoredRoutes,
@@ -154,6 +157,7 @@ const module$1 = defineNuxtModule({
         __NUXT_SENTRY_CACHE_PREFIX__: serializeBuildLiteral(resolved.cachePrefix),
         __NUXT_SENTRY_DB__: serializeBuildLiteral(resolved.db),
         __NUXT_SENTRY_TRACES_SAMPLE_RATE__: serializeBuildLiteral(resolved.tracesSampleRate),
+        __NUXT_SENTRY_QUEUE_TRACES_SAMPLE_RATE__: serializeBuildLiteral(resolved.queueTracesSampleRate),
         __NUXT_SENTRY_IGNORED_ROUTES__: serializeBuildLiteral(resolved.ignoredRoutes)
       };
       plugins.push({

@@ -15,6 +15,7 @@ import { shouldEnableServerSentry } from './utils/sentry-enabled'
 declare const __NUXT_SENTRY_DSN__: string
 declare const __NUXT_SENTRY_CACHE_PREFIX__: string
 declare const __NUXT_SENTRY_TRACES_SAMPLE_RATE__: number
+declare const __NUXT_SENTRY_QUEUE_TRACES_SAMPLE_RATE__: number
 declare const __NUXT_SENTRY_IGNORED_ROUTES__: string[]
 
 const normalizePrismaQuerySpan = createPrismaSpanNormalizer()
@@ -40,7 +41,7 @@ Sentry.init({
 
   tracesSampler: ({ name }: { name?: string }) => {
     if (name?.startsWith('queue.publish/') || name?.startsWith('queue.process/')) {
-      return 1
+      return __NUXT_SENTRY_QUEUE_TRACES_SAMPLE_RATE__
     }
     if (name && __NUXT_SENTRY_IGNORED_ROUTES__.some((route: string) => name.startsWith(route))) {
       return 0
