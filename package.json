@@ -9,6 +9,10 @@
     ".": {
       "types": "./dist/types.d.mts",
       "import": "./dist/module.mjs"
+    },
+    "./utils": {
+      "types": "./dist/runtime/utils/instrument-postgres-js.d.ts",
+      "import": "./dist/runtime/utils/instrument-postgres-js.js"
     }
   },
   "main": "./dist/module.mjs",
