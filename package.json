@@ -1,7 +1,7 @@
 {
   "name": "@mttzzz/nuxt-sentry",
-  "version": "0.1.0",
-  "description": "Nuxt 4 module: shared Sentry boilerplate (server init, client init, Prisma span normalization, nitro error capture, tunnel)",
+  "version": "0.2.0",
+  "description": "Nuxt 4 module: shared Sentry boilerplate (Bun server init, client init, nitro error capture, tunnel, portable postgres-js instrumentation)",
   "repository": "github:mttzzz/nuxt-sentry",
   "license": "MIT",
   "type": "module",
@@ -36,7 +36,7 @@
     "test:types": "vue-tsc --noEmit && cd playground && vue-tsc --noEmit"
   },
   "dependencies": {
-    "@nuxt/kit": "^4.4.2",
+    "@nuxt/kit": "^4.4.5",
     "defu": "^6.1.4",
     "h3": "^1.15.0"
   },
@@ -45,28 +45,24 @@
     "@nuxt/devtools": "^3.2.4",
     "@nuxt/eslint-config": "^1.15.2",
     "@nuxt/module-builder": "^1.0.2",
-    "@nuxt/schema": "^4.4.2",
+    "@nuxt/schema": "^4.4.5",
     "@nuxt/test-utils": "^4.0.3",
-    "@prisma/instrumentation": "^7.8.0",
-    "@sentry/bun": "^10.50.0",
-    "@sentry/core": "^10.50.0",
+    "@sentry/bun": "^10.52.0",
+    "@sentry/core": "^10.52.0",
     "@sentry/vite-plugin": "^5.2.0",
-    "@sentry/vue": "^10.50.0",
-    "@types/node": "latest",
-    "eslint": "^10.2.1",
-    "nuxt": "^4.4.2",
+    "@sentry/vue": "^10.52.0",
+    "@types/node": "25.7.0",
+    "eslint": "^10.3.0",
+    "nuxt": "^4.4.5",
     "typescript": "~6.0.3",
-    "vitest": "^4.1.5",
-    "vue-tsc": "^3.2.7"
+    "vitest": "^4.1.6",
+    "vue-tsc": "^3.2.8"
   },
   "peerDependencies": {
-    "@prisma/instrumentation": "^7.0.0",
-    "@sentry/bun": "^10.0.0",
+    "@sentry/bun": "^10.52.0",
+    "@sentry/core": "^10.52.0",
     "@sentry/vite-plugin": "^5.0.0",
-    "@sentry/vue": "^10.0.0",
-    "nuxt": "^4.0.0"
-  },
-  "peerDependenciesMeta": {
-    "@prisma/instrumentation": { "optional": true }
+    "@sentry/vue": "^10.52.0",
+    "nuxt": "^4.4.5"
   }
 }

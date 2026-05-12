@@ -1,15 +1,14 @@
-import { addPlugin, addServerHandler, addServerPlugin, addTemplate, createResolver, defineNuxtModule } from '@nuxt/kit'
+import { addPlugin, addServerHandler, addServerImports, addServerPlugin, addTemplate, createResolver, defineNuxtModule } from '@nuxt/kit'
 import { sentryVitePlugin } from '@sentry/vite-plugin'
 import { defu } from 'defu'
 
 import type { ModuleOptions, PublicRuntimeSentryConfig, ResolvedModuleOptions } from './runtime/types'
 import { buildTunnelIngestUrl } from './runtime/utils/tunnel-ingest-url'
 
-export type { ModuleOptions, SentryDbInstrumentation } from './runtime/types'
+export type { ModuleOptions } from './runtime/types'
 
 const DEFAULTS = {
   org: 'pushka-biz',
-  db: 'prisma' as const,
   tunnelEndpoint: '/api/sentry-tunnel',
   tracesSampleRate: 0.1,
   queueTracesSampleRate: 0.1,
@@ -59,6 +58,21 @@ export default defineNuxtModule<ModuleOptions>({
   },
   defaults: {} as ModuleOptions,
   setup(opts, nuxt) {
+    const resolver = createResolver(import.meta.url)
+
+    /*
+     * Server auto-import: instrumentPostgresJs — portable обёртка для postgres-js sql-инстанса.
+     * Используется в `server/db/client.ts` консьюмера для оборачивания singleton-клиента
+     * перед drizzle. См. подробности в runtime/utils/instrument-postgres-js.ts.
+     *
+     * Регистрируем ДО `_prepare`-гейта, иначе при `nuxi prepare` на стороне консьюмера
+     * (т.е. при typegen) auto-import не попадает в .nuxt/types — и TS не видит символ.
+     */
+    addServerImports({
+      name: 'instrumentPostgresJs',
+      from: resolver.resolve('./runtime/utils/instrument-postgres-js'),
+    })
+
     /*
      * `nuxt-module-build prepare` подгружает модуль без user-options, чтобы
      * сгенерить тайпинги. В этом режиме validation срабатывать не должна —
@@ -83,7 +97,6 @@ export default defineNuxtModule<ModuleOptions>({
       project: opts.project,
       cachePrefix: opts.cachePrefix,
       org: opts.org ?? DEFAULTS.org,
-      db: opts.db ?? DEFAULTS.db,
       tunnelEndpoint: opts.tunnelEndpoint ?? DEFAULTS.tunnelEndpoint,
       tracesSampleRate: opts.tracesSampleRate ?? DEFAULTS.tracesSampleRate,
       queueTracesSampleRate: opts.queueTracesSampleRate ?? DEFAULTS.queueTracesSampleRate,
@@ -95,7 +108,6 @@ export default defineNuxtModule<ModuleOptions>({
       excludeLocalhostInProd: opts.excludeLocalhostInProd ?? DEFAULTS.excludeLocalhostInProd,
     }
 
-    const resolver = createResolver(import.meta.url)
     const tunnelIngestUrl = buildTunnelIngestUrl(resolved.dsn)
 
     /* runtimeConfig.public.sentry — сериализуемая часть (без RegExp). */
@@ -132,7 +144,6 @@ export default defineNuxtModule<ModuleOptions>({
           `export const dsn = ${serializeBuildLiteral(resolved.dsn)}`,
           `export const project = ${serializeBuildLiteral(resolved.project)}`,
           `export const cachePrefix = ${serializeBuildLiteral(resolved.cachePrefix)}`,
-          `export const db = ${serializeBuildLiteral(resolved.db)}`,
           `export const tunnelIngestUrl = ${serializeBuildLiteral(tunnelIngestUrl)}`,
           `export const tracesSampleRate = ${serializeBuildLiteral(resolved.tracesSampleRate)}`,
           `export const ignoredRoutes = ${serializeBuildLiteral(resolved.ignoredRoutes)}`,
@@ -209,16 +220,13 @@ export default defineNuxtModule<ModuleOptions>({
 
     /*
      * `nitro:config` hook — инжектит instrument.server в Nitro server entry как
-     * top-level rollup chunk. Sentry init выполняется ДО любых application-imports,
-     * чтобы Prisma/OTEL успели обернуться. Только в production: в dev OTEL шумит
-     * и Sentry всё равно отключён через NODE_ENV-гейт.
+     * top-level rollup chunk. Sentry init выполняется ДО любых application-imports.
+     * Только в production: в dev OTEL шумит и Sentry всё равно отключён через NODE_ENV-гейт.
      */
     nuxt.hook('nitro:config', (nitroConfig) => {
       if (process.env.NODE_ENV !== 'production') return
 
-      const instrumentPath = resolver.resolve(
-        resolved.db === 'prisma' ? './runtime/instrument.server.prisma' : './runtime/instrument.server',
-      )
+      const instrumentPath = resolver.resolve('./runtime/instrument.server')
 
       nitroConfig.rollupConfig ||= {}
       nitroConfig.rollupConfig.plugins ||= []
@@ -230,7 +238,6 @@ export default defineNuxtModule<ModuleOptions>({
       const instrumentReplacements: Record<string, string> = {
         __NUXT_SENTRY_DSN__: serializeBuildLiteral(resolved.dsn),
         __NUXT_SENTRY_CACHE_PREFIX__: serializeBuildLiteral(resolved.cachePrefix),
-        __NUXT_SENTRY_DB__: serializeBuildLiteral(resolved.db),
         __NUXT_SENTRY_TRACES_SAMPLE_RATE__: serializeBuildLiteral(resolved.tracesSampleRate),
         __NUXT_SENTRY_QUEUE_TRACES_SAMPLE_RATE__: serializeBuildLiteral(resolved.queueTracesSampleRate),
         __NUXT_SENTRY_IGNORED_ROUTES__: serializeBuildLiteral(resolved.ignoredRoutes),

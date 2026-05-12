@@ -1,14 +1,10 @@
-/**
- * Какую DB-инструментацию подключать в `Sentry.init`.
- *   - `'prisma'`     → `@prisma/instrumentation` + `Sentry.prismaIntegration` (требует peer `@prisma/instrumentation`)
- *   - `'postgres-js'`→ `Sentry.postgresJsIntegration` (драйвер `postgres`, aka postgres-js — для drizzle/postgres-js)
- *   - `'pg'`         → `Sentry.postgresIntegration` (драйвер `pg`)
- *   - `'mysql2'`     → `Sentry.mysql2Integration` (драйвер `mysql2`)
- *   - `false`        → не подключать DB-инструментацию вообще
- *
- * Default: `'prisma'` (back-compat с проектами, которые ставят пакет до v0.2.0).
+/*
+ * DB-инструментация в этом модуле подключается НЕ через `Sentry.init({ integrations })`.
+ * OTEL-based интеграции (`postgresJsIntegration`, `pgIntegration`, `mysql2Integration`)
+ * не работают на Bun из-за сломанного `import-in-the-middle` (см. instrument-postgres-js.ts).
+ * Поэтому опции `db` нет: вместо неё консьюмер вызывает `instrumentPostgresJs(client)`
+ * вручную (auto-import, см. runtime/utils/instrument-postgres-js.ts).
  */
-export type SentryDbInstrumentation = 'prisma' | 'postgres-js' | 'pg' | 'mysql2' | false
 
 export interface ModuleOptions {
   /** Sentry DSN. Required. */
@@ -19,8 +15,6 @@ export interface ModuleOptions {
   cachePrefix: string
   /** Sentry org slug. Default: 'pushka-biz'. */
   org?: string
-  /** DB-инструментация для server `Sentry.init`. Default: `'prisma'`. См. {@link SentryDbInstrumentation}. */
-  db?: SentryDbInstrumentation
   /** Endpoint для tunnel-проксирования client → ingest. Default: '/api/sentry-tunnel'. */
   tunnelEndpoint?: string
   /** Default: 0.1 */
@@ -55,7 +49,6 @@ export interface ResolvedModuleOptions {
   project: string
   cachePrefix: string
   org: string
-  db: SentryDbInstrumentation
   tunnelEndpoint: string
   tracesSampleRate: number
   queueTracesSampleRate: number
