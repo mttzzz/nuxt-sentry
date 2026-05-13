@@ -12,12 +12,11 @@ export function buildTunnelIngestUrl(dsn: string): string {
   let url: URL
   try {
     url = new URL(dsn)
-  }
-  catch {
+  } catch {
     throw new Error(`[nuxt-sentry] Invalid DSN format: ${dsn}`)
   }
 
-  const projectId = url.pathname.replace(/^\/+/, '').replace(/\/+$/, '')
+  const projectId = url.pathname.replace(/^\/+/u, '').replace(/\/+$/u, '')
   if (!projectId) {
     throw new Error(`[nuxt-sentry] DSN has no project id: ${dsn}`)
   }

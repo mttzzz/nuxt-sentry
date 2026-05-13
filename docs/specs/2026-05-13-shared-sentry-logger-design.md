@@ -14,15 +14,15 @@
 
 Однако прикладная Sentry-обвязка (logger, scheduled-task wrapper, Bull queue tracing, cron monitor, error-report builder) разъехалась по проектам в трёх копиях разной зрелости:
 
-| Артефакт | ai.pushka.biz | easy2.pushka.biz | kp.modmb.com |
-|---|---|---|---|
-| `server/utils/logger.ts` | ★ canonical: 4 уровня, DI sink, breadcrumbs, captureMessage fallback (139 usages) | старый: только `error()`, consola, без debug/info/warn (182 usages) | минимум: `warn`+`error`, **console-only, без Sentry** (17 usages) |
-| `app/utils/logger.ts` (client) | warn+error, без явного captureException | error-only, опирается на `consoleLoggingIntegration` | отсутствует |
-| `server/utils/sentry-cron.ts` | ✅ `withCronMonitor` | ✅ identical | — (нет cron'ов) |
-| `server/utils/sentry-queue.ts` | ✅ Bull producer/consumer | ✅ identical | — (нет Bull) |
-| `server/utils/sentry-report.ts` | ✅ `buildSentryReport` (extras: cause, appData) | — | — |
-| `server/utils/define-sentry-task.ts` | ✅ обёртка (10 task'ов мигрированы) | — (4 task'а под миграцию) | — |
-| Кастомный nitro `error`-hook | ✅ `error-handler.ts` дублирует pkg's `plugin-capture-errors` | — | — |
+| Артефакт                             | ai.pushka.biz                                                                     | easy2.pushka.biz                                                    | kp.modmb.com                                                      |
+| ------------------------------------ | --------------------------------------------------------------------------------- | ------------------------------------------------------------------- | ----------------------------------------------------------------- |
+| `server/utils/logger.ts`             | ★ canonical: 4 уровня, DI sink, breadcrumbs, captureMessage fallback (139 usages) | старый: только `error()`, consola, без debug/info/warn (182 usages) | минимум: `warn`+`error`, **console-only, без Sentry** (17 usages) |
+| `app/utils/logger.ts` (client)       | warn+error, без явного captureException                                           | error-only, опирается на `consoleLoggingIntegration`                | отсутствует                                                       |
+| `server/utils/sentry-cron.ts`        | ✅ `withCronMonitor`                                                              | ✅ identical                                                        | — (нет cron'ов)                                                   |
+| `server/utils/sentry-queue.ts`       | ✅ Bull producer/consumer                                                         | ✅ identical                                                        | — (нет Bull)                                                      |
+| `server/utils/sentry-report.ts`      | ✅ `buildSentryReport` (extras: cause, appData)                                   | —                                                                   | —                                                                 |
+| `server/utils/define-sentry-task.ts` | ✅ обёртка (10 task'ов мигрированы)                                               | — (4 task'а под миграцию)                                           | —                                                                 |
+| Кастомный nitro `error`-hook         | ✅ `error-handler.ts` дублирует pkg's `plugin-capture-errors`                     | —                                                                   | —                                                                 |
 
 Контейнер для шаринга уже существует. Цель спека — канонизировать `ai.pushka.biz`-версии и довести pkg до состояния, где **проектные `server/utils/{logger,sentry-cron,sentry-queue,sentry-report,define-sentry-task}.ts` полностью удаляются**.
 
@@ -81,13 +81,22 @@ src/
 ```json
 {
   "exports": {
-    ".":          { "types": "./dist/types.d.mts", "import": "./dist/module.mjs" },
-    "./utils":    { "types": "./dist/runtime/utils/instrument-postgres-js.d.ts", "import": "./dist/runtime/utils/instrument-postgres-js.js" },
-    "./logger":   { "types": "./dist/runtime/utils/logger.d.ts", "import": "./dist/runtime/utils/logger.js" },
-    "./logger/client": { "types": "./dist/runtime/utils/client-logger.d.ts", "import": "./dist/runtime/utils/client-logger.js" },
-    "./cron":     { "types": "./dist/runtime/utils/sentry-cron.d.ts", "import": "./dist/runtime/utils/sentry-cron.js" },
-    "./queue":    { "types": "./dist/runtime/utils/sentry-queue.d.ts", "import": "./dist/runtime/utils/sentry-queue.js" },
-    "./task":     { "types": "./dist/runtime/utils/define-sentry-task.d.ts", "import": "./dist/runtime/utils/define-sentry-task.js" }
+    ".": { "types": "./dist/types.d.mts", "import": "./dist/module.mjs" },
+    "./utils": {
+      "types": "./dist/runtime/utils/instrument-postgres-js.d.ts",
+      "import": "./dist/runtime/utils/instrument-postgres-js.js"
+    },
+    "./logger": { "types": "./dist/runtime/utils/logger.d.ts", "import": "./dist/runtime/utils/logger.js" },
+    "./logger/client": {
+      "types": "./dist/runtime/utils/client-logger.d.ts",
+      "import": "./dist/runtime/utils/client-logger.js"
+    },
+    "./cron": { "types": "./dist/runtime/utils/sentry-cron.d.ts", "import": "./dist/runtime/utils/sentry-cron.js" },
+    "./queue": { "types": "./dist/runtime/utils/sentry-queue.d.ts", "import": "./dist/runtime/utils/sentry-queue.js" },
+    "./task": {
+      "types": "./dist/runtime/utils/define-sentry-task.d.ts",
+      "import": "./dist/runtime/utils/define-sentry-task.js"
+    }
   },
   "peerDependencies": {
     "@sentry/bun": "^10.52.0",
@@ -111,10 +120,10 @@ src/
 
 ```ts
 addServerImports([
-  { name: 'createLogger',          from: resolver.resolve('./runtime/utils/logger') },
-  { name: 'createLoggerWithSink',  from: resolver.resolve('./runtime/utils/logger') },
-  { name: 'withCronMonitor',       from: resolver.resolve('./runtime/utils/sentry-cron') },
-  { name: 'defineSentryTask',      from: resolver.resolve('./runtime/utils/define-sentry-task') },
+  { name: 'createLogger', from: resolver.resolve('./runtime/utils/logger') },
+  { name: 'createLoggerWithSink', from: resolver.resolve('./runtime/utils/logger') },
+  { name: 'withCronMonitor', from: resolver.resolve('./runtime/utils/sentry-cron') },
+  { name: 'defineSentryTask', from: resolver.resolve('./runtime/utils/define-sentry-task') },
 ])
 ```
 
@@ -129,8 +138,8 @@ export type LogLevel = 'debug' | 'info' | 'warn' | 'error'
 
 export interface Logger {
   debug: (message: string, ...args: unknown[]) => void
-  info:  (message: string, ...args: unknown[]) => void
-  warn:  (message: string, ...args: unknown[]) => void
+  info: (message: string, ...args: unknown[]) => void
+  warn: (message: string, ...args: unknown[]) => void
   error: (message: string, ...args: unknown[]) => void
 }
 
@@ -145,15 +154,19 @@ export interface LoggerSink {
   isProduction: boolean
   output: (level: LogLevel, tag: string, message: string, args: unknown[]) => void
   captureException: (error: unknown, ctx: { tags: Record<string, string>; extra: Record<string, unknown> }) => void
-  captureMessage: (message: string, ctx: { level: 'error'; tags: Record<string, string>; extra: Record<string, unknown> }) => void
+  captureMessage: (
+    message: string,
+    ctx: { level: 'error'; tags: Record<string, string>; extra: Record<string, unknown> },
+  ) => void
   addBreadcrumb: (breadcrumb: SentryBreadcrumb) => void
 }
 
 export function createLogger(tag: string): Logger
-export function createLoggerWithSink(tag: string, sink: LoggerSink): Logger  // for tests
+export function createLoggerWithSink(tag: string, sink: LoggerSink): Logger // for tests
 ```
 
 **Семантика уровней** (как в ai-canonical):
+
 - `debug` — console-only, off в production
 - `info` — console + Sentry breadcrumb (level=info)
 - `warn` — console + Sentry breadcrumb (level=warning)
@@ -183,9 +196,9 @@ export function createLogger(tag: string): ClientLogger
 
 ```ts
 export interface CronMonitorOptions {
-  checkinMargin?: number  // default 2
-  maxRuntime?: number     // default 10
-  timezone?: string       // default 'Etc/UTC'
+  checkinMargin?: number // default 2
+  maxRuntime?: number // default 10
+  timezone?: string // default 'Etc/UTC'
 }
 
 export async function withCronMonitor<T>(
@@ -201,14 +214,10 @@ export async function withCronMonitor<T>(
 ### 4.7. Public API: `@mttzzz/nuxt-sentry/queue`
 
 ```ts
-import type Queue from 'bull'  // peer-dep, type-only import
+import type Queue from 'bull' // peer-dep, type-only import
 
 export function instrumentQueueProducer<T>(queue: Queue.Queue<T>): Queue.Queue<T>
-export async function withSentryConsumer<T, R>(
-  queueName: string,
-  job: Queue.Job<T>,
-  fn: () => Promise<R>,
-): Promise<R>
+export async function withSentryConsumer<T, R>(queueName: string, job: Queue.Job<T>, fn: () => Promise<R>): Promise<R>
 ```
 
 Идентично ai/easy2. Trace-headers через `_sentryTrace` / `_sentryBaggage` / `_sentryPublishedAt` в job-data; `instrumentQueueProducer` — monkey-patch `.add()` для inject'а headers; `withSentryConsumer` — extract + `Sentry.continueTrace`.
@@ -237,6 +246,7 @@ export function defineSentryTask<R extends Record<string, unknown>>(opts: {
 ```
 
 Семантика:
+
 1. `Sentry.startNewTrace` — новый trace на каждый запуск.
 2. `Sentry.startSpan({ op: 'task', name })` — длительность в Performance.
 3. Если `meta.cron` указан — оборачиваем в `Sentry.withMonitor` (Sentry Crons check-in).
@@ -250,6 +260,7 @@ export function defineSentryTask<R extends Record<string, unknown>>(opts: {
 Текущая проблема (ai): pkg's `plugin-capture-errors` ловит ошибку без extras + локальный `error-handler.ts` ловит ту же ошибку с `buildSentryReport` (extras: cause, appData) → каждая 5xx уходит в Sentry **дважды** (с разным контекстом).
 
 Решение в pkg:
+
 - `captureNitroError` обогащается до уровня ai-canonical: всегда вытаскивает `error.cause`, `error.data` (h3 createError data — наш AppErrorData), URL/method/headers из event.
 - Module accepts две опции — обе функции, optional:
 
@@ -257,7 +268,10 @@ export function defineSentryTask<R extends Record<string, unknown>>(opts: {
 export interface ModuleOptions {
   // ...existing...
   errorReportFilter?: (error: unknown) => boolean
-  errorReportEnricher?: (error: unknown, event?: H3Event) => { extra?: Record<string, unknown>; tags?: Record<string, string> }
+  errorReportEnricher?: (
+    error: unknown,
+    event?: H3Event,
+  ) => { extra?: Record<string, unknown>; tags?: Record<string, string> }
 }
 ```
 
@@ -285,7 +299,7 @@ sentry: {
 В pkg-`plugin-capture-errors`:
 
 ```ts
-import filter from '#nuxt-sentry/error-filter'  // virtual, resolved by module
+import filter from '#nuxt-sentry/error-filter' // virtual, resolved by module
 import enricher from '#nuxt-sentry/error-enricher'
 ```
 
@@ -299,17 +313,18 @@ Module template emits эти virtuals — если опция не задана,
 
 ## 5. Customization points
 
-| Опция | Default | Use case |
-|---|---|---|
+| Опция                                       | Default                   | Use case                                                |
+| ------------------------------------------- | ------------------------- | ------------------------------------------------------- |
 | `LoggerSink` (через `createLoggerWithSink`) | production-aware Bun sink | unit-тесты с мокнутым Sentry, кастом для тестов проекта |
-| `errorReportFilter` (module option, path) | `() => true` | ai's "Cannot find static asset" skip |
-| `errorReportEnricher` (module option, path) | `() => ({})` | ai's `cause`/`appData` extras |
-| `defineSentryTask`: `loggerTag` override | `task:<name>` | YAGNI, **отложено** |
-| Logger log-level threshold через env | `debug` off в prod | YAGNI, **отложено** |
+| `errorReportFilter` (module option, path)   | `() => true`              | ai's "Cannot find static asset" skip                    |
+| `errorReportEnricher` (module option, path) | `() => ({})`              | ai's `cause`/`appData` extras                           |
+| `defineSentryTask`: `loggerTag` override    | `task:<name>`             | YAGNI, **отложено**                                     |
+| Logger log-level threshold через env        | `debug` off в prod        | YAGNI, **отложено**                                     |
 
 ## 6. Removed/deprecated
 
 После раскатки удаляются из проектов:
+
 - `server/utils/logger.ts` × 3
 - `app/utils/logger.ts` × 2 (ai, easy2)
 - `server/utils/sentry-cron.ts` × 2 (ai, easy2)
@@ -325,14 +340,14 @@ Module template emits эти virtuals — если опция не задана,
 
 В pkg `test/unit/`:
 
-| File | Coverage |
-|---|---|
-| `logger.test.ts` | `createLoggerWithSink` — все 4 уровня, production gate, breadcrumb dispatch, Error-detection в args для captureException, fallback на captureMessage, source-tag wiring, cache idempotency |
-| `client-logger.test.ts` | `error()` явно captures, `warn()` adds breadcrumb |
-| `sentry-cron.test.ts` | `withCronMonitor` передаёт правильный schedule shape в `Sentry.withMonitor` |
-| `sentry-queue.test.ts` | `instrumentQueueProducer.add` инжектит trace headers, namespace-style и default-style; `withSentryConsumer` continues trace from headers, без headers — startNewTrace |
-| `define-sentry-task.test.ts` | `runSentryTaskBody` success path возвращает `{ result: 'success', ...data }`; error path → `{ result: 'error', message }`; cron-режим зовёт withMonitor; not-cron — startNewTrace |
-| `capture-nitro-error.test.ts` | filter (`() => false` skip), enricher merge, default 4xx skip, default extras (URL/method/headers/cause/appData) |
+| File                          | Coverage                                                                                                                                                                                   |
+| ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `logger.test.ts`              | `createLoggerWithSink` — все 4 уровня, production gate, breadcrumb dispatch, Error-detection в args для captureException, fallback на captureMessage, source-tag wiring, cache idempotency |
+| `client-logger.test.ts`       | `error()` явно captures, `warn()` adds breadcrumb                                                                                                                                          |
+| `sentry-cron.test.ts`         | `withCronMonitor` передаёт правильный schedule shape в `Sentry.withMonitor`                                                                                                                |
+| `sentry-queue.test.ts`        | `instrumentQueueProducer.add` инжектит trace headers, namespace-style и default-style; `withSentryConsumer` continues trace from headers, без headers — startNewTrace                      |
+| `define-sentry-task.test.ts`  | `runSentryTaskBody` success path возвращает `{ result: 'success', ...data }`; error path → `{ result: 'error', message }`; cron-режим зовёт withMonitor; not-cron — startNewTrace          |
+| `capture-nitro-error.test.ts` | filter (`() => false` skip), enricher merge, default 4xx skip, default extras (URL/method/headers/cause/appData)                                                                           |
 
 Все тесты — DI/mocked, без реального `@sentry/bun` (через sink/runtime injection). Existing pkg tests (`tunnel-ingest-url`, `instrument-postgres-js`, `ignore-errors`) сохраняются.
 
@@ -345,6 +360,7 @@ Module template emits эти virtuals — если опция не задана,
 Каждая фаза — отдельный PR на свой репо.
 
 ### Phase 1: pkg release v0.3.0
+
 1. Реализация в `~/projects/nuxt-sentry/`:
    - 5 новых утилит в `src/runtime/utils/`
    - расширение `module.ts` (`addServerImports`, error-pipeline templates)
@@ -356,6 +372,7 @@ Module template emits эти virtuals — если опция не задана,
 3. Bump `version: 0.3.0` + tag.
 
 ### Phase 2: easy2.pushka.biz migration
+
 1. `bun update @mttzzz/nuxt-sentry`
 2. Удалить `server/utils/{logger,sentry-cron,sentry-queue}.ts` + `app/utils/logger.ts`. Auto-import pkg-версии.
 3. Мигрировать 4 task'а с `defineTask + withCronMonitor` → `defineSentryTask({ meta: { name, description, cron } })`.
@@ -363,12 +380,14 @@ Module template emits эти virtuals — если опция не задана,
 5. Verify: signup race-test зелёный, существующий тест `payment-sync` работает.
 
 ### Phase 3: kp.modmb.com migration
+
 1. `bun update @mttzzz/nuxt-sentry`
 2. Удалить `server/utils/logger.ts`. Auto-import pkg-версии. **17 call-site'ов** не меняются — API совместим.
 3. `bun fmt + lint:fix + typecheck + test`.
 4. Verify: smoke test `createLogger('test').error('msg', new Error('x'))` → событие в Sentry-test-DSN.
 
 ### Phase 4: ai.pushka.biz migration
+
 1. `bun update @mttzzz/nuxt-sentry`
 2. Удалить `server/utils/{logger,sentry-cron,sentry-queue,sentry-report,define-sentry-task}.ts` + `server/plugins/error-handler.ts` + `app/utils/logger.ts`.
 3. Перевести `error-handler-filter.ts` → `server/utils/error-filter.ts` (default export для path-based config).
@@ -384,13 +403,13 @@ Module template emits эти virtuals — если опция не задана,
 
 ## 10. Risks & mitigations
 
-| Risk | Mitigation |
-|---|---|
-| Auto-import конфликт: проект имеет свой `createLogger` в `server/utils/` → две регистрации | Phase 2-4 удаляют local `logger.ts` ДО bump → конфликт невозможен. Лог-сообщение `nuxi prepare` поможет диагностировать. |
-| `bull` peer-warning у kp при `bun install` | `peerDependenciesMeta.bull.optional=true` — bun не предупреждает. Verify in Phase 3. |
+| Risk                                                                                                                                                   | Mitigation                                                                                                                               |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| Auto-import конфликт: проект имеет свой `createLogger` в `server/utils/` → две регистрации                                                             | Phase 2-4 удаляют local `logger.ts` ДО bump → конфликт невозможен. Лог-сообщение `nuxi prepare` поможет диагностировать.                 |
+| `bull` peer-warning у kp при `bun install`                                                                                                             | `peerDependenciesMeta.bull.optional=true` — bun не предупреждает. Verify in Phase 3.                                                     |
 | Path-based `errorReportFilter`: путь резолвится в build-time, but Nitro context не имеет alias `~` для server → надо использовать `nuxt.options.alias` | Module добавляет `nuxt.options.nitro.alias['#nuxt-sentry/error-filter'] = resolved.path`. Аналог уже работает для `#nuxt-sentry/config`. |
-| Existing ai's `define-sentry-task.test.ts` ломается из-за импорта пути | Test переезжает в pkg; ai-side остаётся integration-тест на конкретный task (e.g. `vercel:check-balance`). |
-| Client logger потеряет `consola.withTag` форматирование DevTools | Pkg client logger форматирует prefix `[<tag>]` сам, как server logger. Визуально сравнимо. |
+| Existing ai's `define-sentry-task.test.ts` ломается из-за импорта пути                                                                                 | Test переезжает в pkg; ai-side остаётся integration-тест на конкретный task (e.g. `vercel:check-balance`).                               |
+| Client logger потеряет `consola.withTag` форматирование DevTools                                                                                       | Pkg client logger форматирует prefix `[<tag>]` сам, как server logger. Визуально сравнимо.                                               |
 
 ## 11. Open questions
 

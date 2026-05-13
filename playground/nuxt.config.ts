@@ -1,8 +1,5 @@
 export default defineNuxtConfig({
-  modules: [
-    '@mttzzz/nuxt-stale-deploy-guard',
-    '@mttzzz/nuxt-sentry',
-  ],
+  modules: ['@mttzzz/nuxt-stale-deploy-guard', '@mttzzz/nuxt-sentry'],
   ssr: false,
   devtools: { enabled: true },
   runtimeConfig: {

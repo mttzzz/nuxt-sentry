@@ -18,11 +18,13 @@ import * as Sentry from '@sentry/bun'
 
 import { shouldEnableServerSentry } from './utils/sentry-enabled'
 
+// oxlint-disable no-underscore-dangle -- build-time placeholders replaced by renderChunk in module.ts; naming convention required by token-substitution regex
 declare const __NUXT_SENTRY_DSN__: string
 declare const __NUXT_SENTRY_CACHE_PREFIX__: string
 declare const __NUXT_SENTRY_TRACES_SAMPLE_RATE__: number
 declare const __NUXT_SENTRY_QUEUE_TRACES_SAMPLE_RATE__: number
 declare const __NUXT_SENTRY_IGNORED_ROUTES__: string[]
+// oxlint-enable no-underscore-dangle
 
 Sentry.init({
   dsn: __NUXT_SENTRY_DSN__,

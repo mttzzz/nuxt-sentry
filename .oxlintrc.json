@@ -1,0 +1,132 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "plugins": [
+    "typescript",
+    "unicorn",
+    "oxc",
+    "import",
+    "node",
+    "promise",
+    "vue"
+  ],
+  "options": {
+    "denyWarnings": true,
+    "typeAware": true,
+    "reportUnusedDisableDirectives": "error"
+  },
+  "categories": {
+    "correctness": "error",
+    "suspicious": "error",
+    "pedantic": "error",
+    "style": "error",
+    "perf": "error"
+  },
+  "env": {
+    "browser": true,
+    "node": true,
+    "es2025": true
+  },
+  "rules": {
+    // ── Core ──────────────────────────────────────────────────────────
+    "no-undef": "off",
+    "no-console": "error",
+    "no-unused-vars": [
+      "error",
+      {
+        "caughtErrors": "none",
+        "varsIgnorePattern": "^_",
+        "argsIgnorePattern": "^_"
+      }
+    ],
+
+    // ── Административные ограничения — off навсегда ──────────────────
+    "no-await-in-loop": "off",
+    "no-magic-numbers": "off",
+    "max-lines": ["error", 400],
+    "max-lines-per-function": "off",
+    "max-statements": "off",
+    "max-params": "off",
+    "max-depth": "off",
+    "id-length": "off",
+    "sort-keys": "off",
+    "sort-imports": "off",
+
+    // ── Style — осознанные off ───────────────────────────────────────
+    "no-plusplus": "off",
+    "no-continue": "off",
+    "no-ternary": "off",
+    "init-declarations": "off",
+    "func-style": ["error", "declaration"],
+
+    // ── TypeScript — осознанные off ──────────────────────────────────
+    "typescript/no-explicit-any": "off",
+    "typescript/no-non-null-assertion": "off",
+
+    // ── TypeScript — type-aware ──────────────────────────────────────
+    "typescript/no-floating-promises": "error",
+    "typescript/no-misused-promises": "error",
+    "typescript/await-thenable": "error",
+    "typescript/no-import-type-side-effects": "error",
+    "typescript/no-unnecessary-type-conversion": "error",
+    "typescript/no-unnecessary-type-assertion": "error",
+    "typescript/non-nullable-type-assertion-style": "error",
+    "typescript/consistent-type-imports": "error",
+    "typescript/no-inferrable-types": "error",
+    "typescript/prefer-readonly-parameter-types": "off",
+
+    "typescript/no-unsafe-type-assertion": "off",
+    "typescript/no-redundant-type-constituents": "error",
+    "typescript/no-duplicate-type-constituents": "error",
+
+    // ── Import ───────────────────────────────────────────────────────
+    "import/no-named-export": "off",
+    "import/prefer-default-export": "off",
+    "import/no-namespace": "off",
+    "import/max-dependencies": "off",
+    "import/group-exports": "off",
+    "import/exports-last": "off",
+    "import/no-nodejs-modules": "off",
+    "import/consistent-type-specifier-style": "off",
+
+    // ── Node ─────────────────────────────────────────────────────────
+
+    // ── Unicorn ──────────────────────────────────────────────────────
+    "unicorn/filename-case": "off",
+    "unicorn/no-null": "off",
+    "unicorn/no-array-for-each": "error",
+    "unicorn/catch-error-name": "off",
+    "unicorn/empty-brace-spaces": "off",
+    "unicorn/no-length-as-slice-end": "error",
+    "unicorn/no-useless-error-capture-stack-trace": "error",
+    "unicorn/prefer-node-protocol": "error",
+    "unicorn/numeric-separators-style": "off",
+
+    // ── Vue ──────────────────────────────────────────────────────────
+    "vue/define-props-destructuring": "off",
+
+    // ── Pedantic — слишком шумные ────────────────────────────────────
+    "no-inline-comments": "off",
+    "no-warning-comments": "off",
+    "max-classes-per-file": "off",
+    "typescript/strict-boolean-expressions": "off",
+    "require-await": "off",
+
+    // ── Restriction — точечно полезные ─────────────────────────────
+    "import/no-cycle": "error",
+    "no-param-reassign": "error",
+    "no-use-before-define": ["error", { "functions": false }],
+    "oxc/no-barrel-file": "error",
+    "oxc/no-const-enum": "error",
+    "no-underscore-dangle": "error"
+  },
+  "ignorePatterns": [
+    "node_modules",
+    ".nuxt",
+    ".output",
+    "dist",
+    "playground/.nuxt",
+    "playground/.output",
+    "test/fixtures",
+    "**/*.md"
+  ]
+}

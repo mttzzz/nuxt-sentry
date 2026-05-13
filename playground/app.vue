@@ -4,8 +4,8 @@ const config = useRuntimeConfig()
 async function triggerError() {
   try {
     await $fetch('/api/__throw')
-  }
-  catch (error) {
+  } catch (error) {
+    // oxlint-disable-next-line no-console -- playground debug output
     console.error('caught', error)
   }
 }
@@ -14,8 +14,12 @@ async function triggerError() {
 <template>
   <div style="font-family: system-ui; padding: 2rem; max-width: 720px; margin: 0 auto">
     <h1>nuxt-sentry playground</h1>
-    <p>tunnel: <code>{{ config.public.sentry?.tunnelEndpoint }}</code></p>
-    <p>project: <code>{{ config.public.sentry?.project }}</code></p>
+    <p>
+      tunnel: <code>{{ config.public.sentry?.tunnelEndpoint }}</code>
+    </p>
+    <p>
+      project: <code>{{ config.public.sentry?.project }}</code>
+    </p>
     <button
       type="button"
       @click="triggerError"

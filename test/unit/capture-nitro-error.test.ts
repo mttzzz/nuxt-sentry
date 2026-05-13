@@ -2,7 +2,9 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const captureExceptionMock = vi.fn()
 const setExtrasMock = vi.fn()
+// oxlint-disable-next-line promise/prefer-await-to-callbacks -- mock factory callback for vi.fn, not a promise callback
 const withScopeMock = vi.fn((cb: (scope: { setExtras: typeof setExtrasMock }) => void) => {
+  // oxlint-disable-next-line promise/prefer-await-to-callbacks -- invoking the captured callback synchronously in test double
   cb({ setExtras: setExtrasMock })
 })
 

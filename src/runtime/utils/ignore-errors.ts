@@ -10,11 +10,11 @@
 import { STALE_CHUNK_PATTERNS } from '@mttzzz/nuxt-stale-deploy-guard/sentry'
 
 export const IGNORED_VIEW_TRANSITION_ERRORS: RegExp[] = [
-  /Transition was aborted/,
-  /Transition was skipped/,
-  /skipTransition\(\) was called/,
-  /View transition update callback timed out/,
-  /document visibility state/,
+  /Transition was aborted/u,
+  /Transition was skipped/u,
+  /skipTransition\(\) was called/u,
+  /View transition update callback timed out/u,
+  /document visibility state/u,
   /*
    * Firefox 149+ при `document.visibilityState === 'hidden'` во время навигации
    * реджектит promise из `startViewTransition()` с
@@ -22,7 +22,7 @@ export const IGNORED_VIEW_TRANSITION_ERRORS: RegExp[] = [
    * Nuxt view-transitions плагин не .catch()-ает этот promise, и reject долетает
    * в Sentry как unhandledrejection. По spec, не баг.
    */
-  /Skipped ViewTransition/i,
+  /Skipped ViewTransition/iu,
 ]
 
 /*
@@ -33,26 +33,16 @@ export const IGNORED_VIEW_TRANSITION_ERRORS: RegExp[] = [
  * `<no response> Load failed` — это network hiccup, не функциональный баг.
  * Формулировка в сообщении ofetch: `[GET] "<url>": <reason>`.
  */
-export const IGNORED_MANIFEST_POLL_ERRORS: RegExp[] = [
-  /\[[A-Z]+\] "[^"]*\/_nuxt\/builds\/(meta\/[^"]+|latest)\.json"/i,
-]
+export const IGNORED_MANIFEST_POLL_ERRORS: RegExp[] = [/\[[A-Z]+\] "[^"]*\/_nuxt\/builds\/(meta\/[^"]+|latest)\.json"/iu]
 
 export function buildIgnoreErrors(additional: (string | RegExp)[] = []): (string | RegExp)[] {
-  return [
-    ...IGNORED_VIEW_TRANSITION_ERRORS,
-    ...STALE_CHUNK_PATTERNS,
-    ...IGNORED_MANIFEST_POLL_ERRORS,
-    ...additional,
-  ]
+  return [...IGNORED_VIEW_TRANSITION_ERRORS, ...STALE_CHUNK_PATTERNS, ...IGNORED_MANIFEST_POLL_ERRORS, ...additional]
 }
 
-export function isIgnoredSentryMessage(
-  message: string,
-  additional: (string | RegExp)[] = [],
-): boolean {
+export function isIgnoredSentryMessage(message: string, additional: (string | RegExp)[] = []): boolean {
   const all = buildIgnoreErrors(additional)
   return all.some((pattern) => {
-    if (typeof pattern === 'string') return message.includes(pattern)
+    if (typeof pattern === 'string') { return message.includes(pattern) }
     return pattern.test(message)
   })
 }

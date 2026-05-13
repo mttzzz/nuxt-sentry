@@ -24,14 +24,11 @@ bun add github:mttzzz/nuxt-sentry#main
 ```ts
 // nuxt.config.ts
 export default defineNuxtConfig({
-  modules: [
-    '@mttzzz/nuxt-stale-deploy-guard',
-    '@mttzzz/nuxt-sentry',
-  ],
+  modules: ['@mttzzz/nuxt-stale-deploy-guard', '@mttzzz/nuxt-sentry'],
   sentry: {
-    dsn: 'https://<key>@<host>/<projectId>',  // required
-    project: 'easy2-pushka-biz',              // required: Sentry project slug
-    cachePrefix: 'easy2-pushka-biz-cache:',   // required: redis integration prefix
+    dsn: 'https://<key>@<host>/<projectId>', // required
+    project: 'easy2-pushka-biz', // required: Sentry project slug
+    cachePrefix: 'easy2-pushka-biz-cache:', // required: redis integration prefix
     // org: 'pushka-biz',                     // default
     // tunnelEndpoint: '/api/sentry-tunnel',  // default
     // tracesSampleRate: 0.5,

@@ -19,7 +19,7 @@ import type { PublicRuntimeSentryConfig } from '../types'
  * Ingest URL подставляется build-time из `addTemplate` в src/module.ts.
  */
 export default defineEventHandler(async (event) => {
-  const config = useRuntimeConfig(event) as { testMode?: boolean, public: { sentry: PublicRuntimeSentryConfig } }
+  const config = useRuntimeConfig(event) as { testMode?: boolean; public: { sentry: PublicRuntimeSentryConfig } }
 
   if (config.testMode || process.env.SENTRY_DISABLED === '1') {
     setResponseStatus(event, 204)
@@ -33,6 +33,7 @@ export default defineEventHandler(async (event) => {
   }
 
   try {
+    // oxlint-disable-next-line typescript/no-unsafe-argument -- tunnelIngestUrl is a build-time string from virtual module, safe as fetch URL
     const response = await fetch(tunnelIngestUrl, {
       body: rawBody,
       headers: {
@@ -42,8 +43,7 @@ export default defineEventHandler(async (event) => {
     })
 
     return { status: response.status }
-  }
-  catch {
+  } catch {
     /* SDK игнорит статус ответа от tunnel; не роняем приложение. */
     return { status: 200, tunnelError: true }
   }

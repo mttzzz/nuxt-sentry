@@ -19,6 +19,7 @@
 ## File Structure (создаётся / меняется в Phase 1)
 
 **Создать:**
+
 - `src/runtime/utils/logger.ts` — server logger + DI sink (canonical из ai)
 - `src/runtime/utils/client-logger.ts` — client logger (явный captureException)
 - `src/runtime/utils/sentry-cron.ts` — `withCronMonitor`
@@ -33,6 +34,7 @@
 - `test/unit/sentry-report.test.ts`
 
 **Модифицировать:**
+
 - `src/runtime/utils/capture-nitro-error.ts` — добавить filter + enricher hooks, использовать `buildSentryReport`
 - `src/runtime/types.ts` — добавить `errorReportFilter` / `errorReportEnricher` в `ModuleOptions`
 - `src/runtime/server/plugin-capture-errors.ts` — импортить filter/enricher из virtuals
@@ -42,6 +44,7 @@
 - `README.md` — документация новых exports
 
 **Build artifact:**
+
 - `dist/` — пересобрать через `nuxt-module-build build` и закоммитить (как сейчас принято — github:-deps грузят tarball с dist).
 
 ---
@@ -49,6 +52,7 @@
 ## Task 1: Server logger (`createLogger` + `createLoggerWithSink`)
 
 **Files:**
+
 - Create: `src/runtime/utils/logger.ts`
 - Create: `test/unit/logger.test.ts`
 
@@ -312,6 +316,7 @@ cd ~/projects/nuxt-sentry && bash ~/.claude/scripts/commit-files.sh "feat(logger
 ## Task 2: Client logger
 
 **Files:**
+
 - Create: `src/runtime/utils/client-logger.ts`
 - Create: `test/unit/client-logger.test.ts`
 
@@ -373,7 +378,7 @@ describe('client createLogger', () => {
     expect(consoleWarnSpy).toHaveBeenCalledWith('[search]', 'rate limited', { retry: 3 })
   })
 
-  it('cache: createLogger(\'foo\') возвращает один и тот же инстанс', () => {
+  it("cache: createLogger('foo') возвращает один и тот же инстанс", () => {
     const a = createLogger('foo')
     const b = createLogger('foo')
     expect(a).toBe(b)
@@ -450,6 +455,7 @@ cd ~/projects/nuxt-sentry && bash ~/.claude/scripts/commit-files.sh "feat(client
 ## Task 3: `withCronMonitor`
 
 **Files:**
+
 - Create: `src/runtime/utils/sentry-cron.ts`
 - Create: `test/unit/sentry-cron.test.ts`
 
@@ -560,6 +566,7 @@ cd ~/projects/nuxt-sentry && bash ~/.claude/scripts/commit-files.sh "feat(cron):
 ## Task 4: Bull queue instrumentation (`instrumentQueueProducer` + `withSentryConsumer`)
 
 **Files:**
+
 - Create: `src/runtime/utils/sentry-queue.ts`
 - Create: `test/unit/sentry-queue.test.ts`
 
@@ -673,7 +680,11 @@ describe('withSentryConsumer', () => {
   it('captureException + rethrow при ошибке fn', async () => {
     const job = { id: 'j', data: { payload: 'x' }, attemptsMade: 0 }
     const err = new Error('processing failed')
-    await expect(withSentryConsumer('media', job as never, async () => { throw err })).rejects.toThrow('processing failed')
+    await expect(
+      withSentryConsumer('media', job as never, async () => {
+        throw err
+      }),
+    ).rejects.toThrow('processing failed')
     expect(captureExceptionMock).toHaveBeenCalledWith(err)
   })
 })
@@ -813,6 +824,7 @@ cd ~/projects/nuxt-sentry && bash ~/.claude/scripts/commit-files.sh "feat(queue)
 ## Task 5: `defineSentryTask` (+ pure `runSentryTaskBody`)
 
 **Files:**
+
 - Create: `src/runtime/utils/define-sentry-task.ts`
 - Create: `test/unit/define-sentry-task.test.ts`
 
@@ -829,9 +841,7 @@ import { runSentryTaskBody } from '../../src/runtime/utils/define-sentry-task'
 function makeSentryRuntime() {
   return {
     startNewTrace: vi.fn(async (fn: () => Promise<unknown>) => fn()),
-    startSpan: vi.fn(
-      async (_opts: { op: string; name: string }, fn: () => Promise<unknown>) => fn(),
-    ),
+    startSpan: vi.fn(async (_opts: { op: string; name: string }, fn: () => Promise<unknown>) => fn()),
     withMonitor: vi.fn(async (_slug: string, fn: () => Promise<unknown>) => fn()),
   }
 }
@@ -861,7 +871,9 @@ describe('runSentryTaskBody', () => {
     const logger = makeLogger()
     const result = await runSentryTaskBody({
       meta: { name: 'amo-sync' },
-      run: async () => { throw new Error('upstream 500') },
+      run: async () => {
+        throw new Error('upstream 500')
+      },
       logger,
       sentry,
     })
@@ -874,7 +886,9 @@ describe('runSentryTaskBody', () => {
     const logger = makeLogger()
     const result = await runSentryTaskBody({
       meta: { name: 't' },
-      run: async () => { throw 'string-thrown' },
+      run: async () => {
+        throw 'string-thrown'
+      },
       logger,
       sentry,
     })
@@ -1061,6 +1075,7 @@ cd ~/projects/nuxt-sentry && bash ~/.claude/scripts/commit-files.sh "feat(task):
 ## Task 6: `buildSentryReport` (internal helper)
 
 **Files:**
+
 - Create: `src/runtime/utils/sentry-report.ts`
 - Create: `test/unit/sentry-report.test.ts`
 
@@ -1223,6 +1238,7 @@ cd ~/projects/nuxt-sentry && bash ~/.claude/scripts/commit-files.sh "feat(sentry
 ## Task 7: Расширение `captureNitroError` (filter + enricher hooks + buildSentryReport)
 
 **Files:**
+
 - Modify: `src/runtime/utils/capture-nitro-error.ts`
 - Modify: `test/unit/capture-nitro-error.test.ts`
 
@@ -1255,7 +1271,7 @@ describe('captureNitroError — filter + enricher', () => {
     expect(filter).not.toHaveBeenCalled()
   })
 
-  it('enricher merge: extras enricher\'а попадают в setExtras поверх default + buildSentryReport', () => {
+  it("enricher merge: extras enricher'а попадают в setExtras поверх default + buildSentryReport", () => {
     const filter = vi.fn().mockReturnValue(true)
     const enricher = vi.fn().mockReturnValue({ extra: { custom: 'value' }, tags: { kind: 'upstream' } })
     const error = Object.assign(new Error('upstream 500'), {
@@ -1276,19 +1292,24 @@ describe('captureNitroError — filter + enricher', () => {
     })
     expect(extras.cause).toMatchObject({ name: 'AWSError', message: 'denied' })
 
-    expect(captureExceptionMock).toHaveBeenCalledWith(error, expect.objectContaining({
-      mechanism: { handled: false, type: 'nitro' },
-    }))
+    expect(captureExceptionMock).toHaveBeenCalledWith(
+      error,
+      expect.objectContaining({
+        mechanism: { handled: false, type: 'nitro' },
+      }),
+    )
   })
 
   it('без options — работает как раньше (legacy compat)', () => {
     const error = new Error('boom')
     captureNitroError(error, { event: { path: '/x', method: 'GET' } })
     expect(captureExceptionMock).toHaveBeenCalledOnce()
-    expect(setExtrasMock).toHaveBeenCalledWith(expect.objectContaining({
-      url: '/x',
-      method: 'GET',
-    }))
+    expect(setExtrasMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        url: '/x',
+        method: 'GET',
+      }),
+    )
   })
 })
 ```
@@ -1363,7 +1384,9 @@ export function captureNitroError(
     return
   }
 
-  const errorLike = (typeof error === 'object' && error !== null ? error : {}) as Parameters<typeof buildSentryReport>[0]
+  const errorLike = (typeof error === 'object' && error !== null ? error : {}) as Parameters<
+    typeof buildSentryReport
+  >[0]
   const baseReport = buildSentryReport(errorLike, context.event as never)
   const enrichment = options?.enricher?.(error, context.event) ?? {}
   const extras = { ...baseReport.extra, ...enrichment.extra }
@@ -1385,11 +1408,9 @@ Note: новый API добавляет `setTags` через `withScope` — н�
 
 ```ts
 const setTagsMock = vi.fn()
-const withScopeMock = vi.fn(
-  (cb: (scope: { setExtras: typeof setExtrasMock; setTags: typeof setTagsMock }) => void) => {
-    cb({ setExtras: setExtrasMock, setTags: setTagsMock })
-  },
-)
+const withScopeMock = vi.fn((cb: (scope: { setExtras: typeof setExtrasMock; setTags: typeof setTagsMock }) => void) => {
+  cb({ setExtras: setExtrasMock, setTags: setTagsMock })
+})
 ```
 
 И в `beforeEach` добавить `setTagsMock.mockClear()`.
@@ -1413,6 +1434,7 @@ cd ~/projects/nuxt-sentry && bash ~/.claude/scripts/commit-files.sh "feat(captur
 ## Task 8: ModuleOptions types + plugin-capture-errors интеграция
 
 **Files:**
+
 - Modify: `src/runtime/types.ts`
 - Modify: `src/runtime/server/plugin-capture-errors.ts`
 
@@ -1498,11 +1520,13 @@ cd ~/projects/nuxt-sentry && bash ~/.claude/scripts/commit-files.sh "feat(types,
 ## Task 9: `module.ts` — addServerImports + emit virtual templates
 
 **Files:**
+
 - Modify: `src/module.ts`
 
 - [ ] **Step 1: Найти место для inserts**
 
 Открыть `src/module.ts`. Найти:
+
 - Существующий блок `addServerImports({ name: 'instrumentPostgresJs', ... })` (строки ~71-74) — вставить наши auto-imports рядом.
 - Существующий `addTemplate({ filename: 'nuxt-sentry-build-config.mjs', ... })` (строки ~139-154) — взять за образец для новых virtuals.
 - Существующие `nuxt.options.alias` / `nuxt.options.nitro.alias` присваивания — добавить два новых alias'а.
@@ -1610,6 +1634,7 @@ cd ~/projects/nuxt-sentry && bash ~/.claude/scripts/commit-files.sh "feat(module
 ## Task 10: `package.json` — exports map + peer deps + version bump
 
 **Files:**
+
 - Modify: `package.json`
 
 - [ ] **Step 1: Read current package.json**
@@ -1714,6 +1739,7 @@ cd ~/projects/nuxt-sentry && bash ~/.claude/scripts/commit-files.sh "feat(pkg)!:
 ## Task 11: README documentation
 
 **Files:**
+
 - Modify: `README.md`
 
 - [ ] **Step 1: Read current README**
@@ -1735,10 +1761,10 @@ cd ~/projects/nuxt-sentry && cat README.md
 
 ```ts
 const log = createLogger('amo-sync')
-log.debug('low-level diag', { count })   // off в production
-log.info('synced ok', { count })          // + Sentry breadcrumb (info)
+log.debug('low-level diag', { count }) // off в production
+log.info('synced ok', { count }) // + Sentry breadcrumb (info)
 log.warn('rate limit hit', { retry: 3 }) // + Sentry breadcrumb (warning)
-log.error('upstream failed', err)         // → Sentry captureException (Error в args) или captureMessage
+log.error('upstream failed', err) // → Sentry captureException (Error в args) или captureMessage
 ```
 
 Семантика по уровням и breadcrumb-механика — в `src/runtime/utils/logger.ts`.
@@ -1809,6 +1835,7 @@ cd ~/projects/nuxt-sentry && bash ~/.claude/scripts/commit-files.sh "docs(README
 ## Task 12: Build dist + playground smoke + final commit
 
 **Files:**
+
 - Build: `dist/**` (overwrite)
 - Optional: `playground/server/api/_smoke.get.ts`
 

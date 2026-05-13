@@ -1,4 +1,12 @@
-import { addPlugin, addServerHandler, addServerImports, addServerPlugin, addTemplate, createResolver, defineNuxtModule } from '@nuxt/kit'
+import {
+  addPlugin,
+  addServerHandler,
+  addServerImports,
+  addServerPlugin,
+  addTemplate,
+  createResolver,
+  defineNuxtModule,
+} from '@nuxt/kit'
 import { sentryVitePlugin } from '@sentry/vite-plugin'
 import { defu } from 'defu'
 
@@ -14,15 +22,9 @@ const DEFAULTS = {
   queueTracesSampleRate: 0.1,
   replaysSessionSampleRate: 0.1,
   replaysOnErrorSampleRate: 0.1,
-  tracePropagationTargets: [/^\/api\//] as (string | RegExp)[],
+  tracePropagationTargets: [/^\/api\//u] as (string | RegExp)[],
   additionalIgnorePatterns: [] as (string | RegExp)[],
-  ignoredRoutes: [
-    '/api/sentry-tunnel',
-    '/_nuxt',
-    '/api/ws',
-    '/api/health',
-    '/__nuxt_error',
-  ],
+  ignoredRoutes: ['/api/sentry-tunnel', '/_nuxt', '/api/ws', '/api/health', '/__nuxt_error'],
   excludeLocalhostInProd: true,
 }
 
@@ -36,7 +38,7 @@ const DEFAULTS = {
  */
 function serializeBuildLiteral(value: unknown): string {
   if (Array.isArray(value)) {
-    return `[${value.map(serializeBuildLiteral).join(',')}]`
+    return `[${value.map((v) => serializeBuildLiteral(v)).join(',')}]`
   }
   if (value instanceof RegExp) {
     return value.toString()
@@ -79,6 +81,7 @@ export default defineNuxtModule<ModuleOptions>({
      * иначе prepare крашится. На реальный build/dev/test консьюмера всегда
      * приходят options через nuxt.config.ts → `sentry: {...}`.
      */
+    // oxlint-disable-next-line no-underscore-dangle -- Nuxt internal _prepare flag (set by nuxt-module-build prepare)
     if (nuxt.options._prepare) {
       return
     }
@@ -110,7 +113,7 @@ export default defineNuxtModule<ModuleOptions>({
 
     const tunnelIngestUrl = buildTunnelIngestUrl(resolved.dsn)
 
-    /* runtimeConfig.public.sentry — сериализуемая часть (без RegExp). */
+    /* RuntimeConfig.public.sentry — сериализуемая часть (без RegExp). */
     const publicConfig: PublicRuntimeSentryConfig = {
       dsn: resolved.dsn,
       project: resolved.project,
@@ -159,15 +162,15 @@ export default defineNuxtModule<ModuleOptions>({
      * стабкомпиляции на стороне консьюмера. Через alias путь к dst-файлу подставляется
      * корректно для обоих рантаймов.
      */
-    nuxt.options.alias = nuxt.options.alias || {}
+    nuxt.options.alias ??= {}
     nuxt.options.alias['#nuxt-sentry/config'] = buildConfigTpl.dst
 
-    nuxt.options.nitro = nuxt.options.nitro || {}
-    nuxt.options.nitro.alias = nuxt.options.nitro.alias || {}
+    nuxt.options.nitro ??= {}
+    nuxt.options.nitro.alias ??= {}
     nuxt.options.nitro.alias['#nuxt-sentry/config'] = buildConfigTpl.dst
 
     /*
-     * tunnel-route — добавляем в `routeRules: { [tunnelEndpoint]: { cors: true } }` —
+     * Tunnel-route — добавляем в `routeRules: { [tunnelEndpoint]: { cors: true } }` —
      * чтобы стейл-deploy-guard / nginx не перехватывали POST. Подстраховка: cors,
      * чтобы любые клиенты (Cordova/native webview) могли проксировать.
      */
@@ -196,12 +199,12 @@ export default defineNuxtModule<ModuleOptions>({
     })
 
     /*
-     * vite plugin для sourcemap upload в Sentry — только в production-build
+     * Vite plugin для sourcemap upload в Sentry — только в production-build
      * и при наличии SENTRY_AUTH_TOKEN. Без токена плагин в no-op, но мы лучше
      * не подключаем чтобы лишний раз не шуметь варнингами.
      */
     if (process.env.NODE_ENV === 'production' && process.env.SENTRY_AUTH_TOKEN) {
-      nuxt.options.vite.plugins = nuxt.options.vite.plugins || []
+      nuxt.options.vite.plugins ??= []
       const plugins = Array.isArray(nuxt.options.vite.plugins) ? nuxt.options.vite.plugins : [nuxt.options.vite.plugins]
       plugins.push(
         sentryVitePlugin({
@@ -224,12 +227,12 @@ export default defineNuxtModule<ModuleOptions>({
      * Только в production: в dev OTEL шумит и Sentry всё равно отключён через NODE_ENV-гейт.
      */
     nuxt.hook('nitro:config', (nitroConfig) => {
-      if (process.env.NODE_ENV !== 'production') return
+      if (process.env.NODE_ENV !== 'production') { return }
 
       const instrumentPath = resolver.resolve('./runtime/instrument.server')
 
-      nitroConfig.rollupConfig ||= {}
-      nitroConfig.rollupConfig.plugins ||= []
+      nitroConfig.rollupConfig ??= {}
+      nitroConfig.rollupConfig.plugins ??= []
 
       const plugins = Array.isArray(nitroConfig.rollupConfig.plugins)
         ? nitroConfig.rollupConfig.plugins
@@ -252,7 +255,7 @@ export default defineNuxtModule<ModuleOptions>({
             fileName: 'instrument.server.mjs',
           })
         },
-        renderChunk(code: string, chunk: { isEntry?: boolean, fileName?: string }) {
+        renderChunk(code: string, chunk: { isEntry?: boolean; fileName?: string }) {
           if (chunk.fileName === 'instrument.server.mjs') {
             /*
              * Подменяем placeholder'ы на JS-литералы build-time. Это надёжнее
@@ -265,7 +268,7 @@ export default defineNuxtModule<ModuleOptions>({
             }
             return { code: replaced, map: null }
           }
-          if (!chunk.isEntry) return null
+          if (!chunk.isEntry) { return null }
           return { code: `import './instrument.server.mjs';\n${code}`, map: null }
         },
       })

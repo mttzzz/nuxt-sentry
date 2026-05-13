@@ -1,6 +1,6 @@
 {
-  "private": true,
   "name": "nuxt-sentry-playground",
+  "private": true,
   "type": "module",
   "scripts": {
     "dev": "nuxt dev",

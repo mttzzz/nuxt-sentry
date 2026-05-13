@@ -10,7 +10,13 @@ import { instrumentPostgresJs } from '../../src/runtime/utils/instrument-postgre
  */
 
 type FakeSql = ((...args: unknown[]) => unknown) & {
-  options: { parsers: Record<string, unknown>, serializers: Record<string, unknown>, host: string[], port: number[], database: string }
+  options: {
+    parsers: Record<string, unknown>
+    serializers: Record<string, unknown>
+    host: string[]
+    port: number[]
+    database: string
+  }
   unsafe: (...args: unknown[]) => unknown
   begin: (...args: unknown[]) => unknown
 }

@@ -27,7 +27,7 @@ interface NitroErrorContext {
 function getStatusCode(error: unknown): number | undefined {
   if (typeof error === 'object' && error !== null && 'statusCode' in error) {
     const value = (error as { statusCode?: unknown }).statusCode
-    if (typeof value === 'number') return value
+    if (typeof value === 'number') { return value }
   }
   return undefined
 }

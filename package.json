@@ -2,9 +2,23 @@
   "name": "@mttzzz/nuxt-sentry",
   "version": "0.2.0",
   "description": "Nuxt 4 module: shared Sentry boilerplate (Bun server init, client init, nitro error capture, tunnel, portable postgres-js instrumentation)",
-  "repository": "github:mttzzz/nuxt-sentry",
   "license": "MIT",
+  "repository": "github:mttzzz/nuxt-sentry",
+  "workspaces": [
+    "playground"
+  ],
+  "files": [
+    "dist"
+  ],
   "type": "module",
+  "main": "./dist/module.mjs",
+  "typesVersions": {
+    "*": {
+      ".": [
+        "./dist/types.d.mts"
+      ]
+    }
+  },
   "exports": {
     ".": {
       "types": "./dist/types.d.mts",
@@ -15,26 +29,13 @@
       "import": "./dist/runtime/utils/instrument-postgres-js.js"
     }
   },
-  "main": "./dist/module.mjs",
-  "typesVersions": {
-    "*": {
-      ".": [
-        "./dist/types.d.mts"
-      ]
-    }
-  },
-  "files": [
-    "dist"
-  ],
-  "workspaces": [
-    "playground"
-  ],
   "scripts": {
     "prepack": "nuxt-module-build build",
     "dev": "npm run dev:prepare && nuxt dev playground",
     "dev:build": "nuxt build playground",
     "dev:prepare": "nuxt-module-build build --stub && nuxt-module-build prepare && nuxt prepare playground",
-    "lint": "eslint .",
+    "lint": "oxlint --type-aware -f unix",
+    "fmt": "oxfmt",
     "test": "vitest run",
     "test:watch": "vitest watch",
     "test:types": "vue-tsc --noEmit && cd playground && vue-tsc --noEmit"
@@ -47,7 +48,6 @@
   "devDependencies": {
     "@mttzzz/nuxt-stale-deploy-guard": "github:mttzzz/nuxt-stale-deploy-guard#main",
     "@nuxt/devtools": "^3.2.4",
-    "@nuxt/eslint-config": "^1.15.2",
     "@nuxt/module-builder": "^1.0.2",
     "@nuxt/schema": "^4.4.5",
     "@nuxt/test-utils": "^4.0.3",
@@ -56,8 +56,9 @@
     "@sentry/vite-plugin": "^5.2.0",
     "@sentry/vue": "^10.52.0",
     "@types/node": "25.7.0",
-    "eslint": "^10.3.0",
     "nuxt": "^4.4.5",
+    "oxfmt": "^0.49.0",
+    "oxlint": "^1.64.0",
     "typescript": "~6.0.3",
     "vitest": "^4.1.6",
     "vue-tsc": "^3.2.8"
