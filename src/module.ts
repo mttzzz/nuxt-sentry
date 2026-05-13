@@ -36,6 +36,21 @@ const DEFAULTS = {
  *   number/boolean → стандарт
  *   array   → [el1, el2, ...]
  */
+/*
+ * Virtual modules для error-pipeline customization. Если опция не задана —
+ * экспортим no-op default. Если задана — re-export user's default из path.
+ *
+ * Path-based вместо inline functions: function-literal сериализация в build-config
+ * хрупка (closures, scope), path-based — детерминирован.
+ */
+function buildVirtualReexport(userPath: string | undefined, fallback: string): string {
+  if (userPath) {
+    /* Nuxt-style ~/... должно резолвиться aliasами consumer'а. Передаём как есть. */
+    return `export { default } from ${JSON.stringify(userPath)}\n`
+  }
+  return `export default ${fallback}\n`
+}
+
 function serializeBuildLiteral(value: unknown): string {
   if (Array.isArray(value)) {
     return `[${value.map((v) => serializeBuildLiteral(v)).join(',')}]`
@@ -70,10 +85,28 @@ export default defineNuxtModule<ModuleOptions>({
      * Регистрируем ДО `_prepare`-гейта, иначе при `nuxi prepare` на стороне консьюмера
      * (т.е. при typegen) auto-import не попадает в .nuxt/types — и TS не видит символ.
      */
-    addServerImports({
-      name: 'instrumentPostgresJs',
-      from: resolver.resolve('./runtime/utils/instrument-postgres-js'),
-    })
+    addServerImports([
+      {
+        name: 'instrumentPostgresJs',
+        from: resolver.resolve('./runtime/utils/instrument-postgres-js'),
+      },
+      {
+        name: 'createLogger',
+        from: resolver.resolve('./runtime/utils/logger'),
+      },
+      {
+        name: 'createLoggerWithSink',
+        from: resolver.resolve('./runtime/utils/logger'),
+      },
+      {
+        name: 'withCronMonitor',
+        from: resolver.resolve('./runtime/utils/sentry-cron'),
+      },
+      {
+        name: 'defineSentryTask',
+        from: resolver.resolve('./runtime/utils/define-sentry-task'),
+      },
+    ])
 
     /*
      * `nuxt-module-build prepare` подгружает модуль без user-options, чтобы
@@ -156,6 +189,18 @@ export default defineNuxtModule<ModuleOptions>({
         ].join('\n'),
     })
 
+    const errorFilterTpl = addTemplate({
+      filename: 'nuxt-sentry-error-filter.mjs',
+      write: true,
+      getContents: () => buildVirtualReexport(opts.errorReportFilter, '() => true'),
+    })
+
+    const errorEnricherTpl = addTemplate({
+      filename: 'nuxt-sentry-error-enricher.mjs',
+      write: true,
+      getContents: () => buildVirtualReexport(opts.errorReportEnricher, '() => ({})'),
+    })
+
     /*
      * Регистрируем alias `#nuxt-sentry/config` для VITE и для NITRO. Без этого `#build/...`
      * блокируется impound-plugin'ом в server runtime; а просто `~/.nuxt/...` не переживёт
@@ -164,10 +209,14 @@ export default defineNuxtModule<ModuleOptions>({
      */
     nuxt.options.alias ??= {}
     nuxt.options.alias['#nuxt-sentry/config'] = buildConfigTpl.dst
+    nuxt.options.alias['#nuxt-sentry/error-filter'] = errorFilterTpl.dst
+    nuxt.options.alias['#nuxt-sentry/error-enricher'] = errorEnricherTpl.dst
 
     nuxt.options.nitro ??= {}
     nuxt.options.nitro.alias ??= {}
     nuxt.options.nitro.alias['#nuxt-sentry/config'] = buildConfigTpl.dst
+    nuxt.options.nitro.alias['#nuxt-sentry/error-filter'] = errorFilterTpl.dst
+    nuxt.options.nitro.alias['#nuxt-sentry/error-enricher'] = errorEnricherTpl.dst
 
     /*
      * Tunnel-route — добавляем в `routeRules: { [tunnelEndpoint]: { cors: true } }` —
@@ -227,7 +276,9 @@ export default defineNuxtModule<ModuleOptions>({
      * Только в production: в dev OTEL шумит и Sentry всё равно отключён через NODE_ENV-гейт.
      */
     nuxt.hook('nitro:config', (nitroConfig) => {
-      if (process.env.NODE_ENV !== 'production') { return }
+      if (process.env.NODE_ENV !== 'production') {
+        return
+      }
 
       const instrumentPath = resolver.resolve('./runtime/instrument.server')
 
@@ -268,7 +319,9 @@ export default defineNuxtModule<ModuleOptions>({
             }
             return { code: replaced, map: null }
           }
-          if (!chunk.isEntry) { return null }
+          if (!chunk.isEntry) {
+            return null
+          }
           return { code: `import './instrument.server.mjs';\n${code}`, map: null }
         },
       })
