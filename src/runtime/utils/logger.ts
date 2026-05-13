@@ -39,7 +39,7 @@ export interface LoggerSink {
 export function createLoggerWithSink(tag: string, sink: LoggerSink): Logger {
   return {
     debug(message, ...args) {
-      if (sink.isProduction) return
+      if (sink.isProduction) { return }
       sink.output('debug', tag, message, args)
     },
     info(message, ...args) {
@@ -56,7 +56,7 @@ export function createLoggerWithSink(tag: string, sink: LoggerSink): Logger {
     },
     error(message, ...args) {
       sink.output('error', tag, message, args)
-      if (!sink.isProduction) return
+      if (!sink.isProduction) { return }
       const firstError = args.find((a): a is Error => a instanceof Error)
       const tags = { source: tag }
       if (firstError) {
@@ -71,17 +71,15 @@ export function createLoggerWithSink(tag: string, sink: LoggerSink): Logger {
 const defaultSink: LoggerSink = {
   isProduction: process.env.NODE_ENV === 'production',
   output(level, tag, message, args) {
-    /* eslint-disable no-console -- logger is the only place that should use console */
-    if (level === 'error') {
-      console.error(`[${tag}]`, message, ...args)
-    } else if (level === 'warn') {
-      console.warn(`[${tag}]`, message, ...args)
-    } else if (level === 'info') {
-      console.info(`[${tag}]`, message, ...args)
-    } else {
-      console.debug(`[${tag}]`, message, ...args)
-    }
-    /* eslint-enable no-console */
+    /* oxlint-disable no-console -- logger is the only place that should use console */
+    const dispatch = {
+      error: console.error,
+      warn: console.warn,
+      info: console.info,
+      debug: console.debug,
+    } as const
+    /* oxlint-enable no-console */
+    dispatch[level](`[${tag}]`, message, ...args)
   },
   captureException(error, ctx) {
     Sentry.captureException(error, ctx)
@@ -98,7 +96,7 @@ const loggerCache = new Map<string, Logger>()
 
 export function createLogger(tag: string): Logger {
   const cached = loggerCache.get(tag)
-  if (cached) return cached
+  if (cached) { return cached }
   const logger = createLoggerWithSink(tag, defaultSink)
   loggerCache.set(tag, logger)
   return logger

@@ -1,14 +1,14 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
-import { createLoggerWithSink, type LoggerSink } from '../../src/runtime/utils/logger'
+import { createLogger, createLoggerWithSink, type LoggerSink } from '../../src/runtime/utils/logger'
 
 function makeSink(overrides: Partial<LoggerSink> = {}): LoggerSink {
   return {
     isProduction: false,
-    output: vi.fn(),
-    captureException: vi.fn(),
-    captureMessage: vi.fn(),
-    addBreadcrumb: vi.fn(),
+    output: vi.fn<LoggerSink['output']>(),
+    captureException: vi.fn<LoggerSink['captureException']>(),
+    captureMessage: vi.fn<LoggerSink['captureMessage']>(),
+    addBreadcrumb: vi.fn<LoggerSink['addBreadcrumb']>(),
     ...overrides,
   }
 }
@@ -71,6 +71,14 @@ describe('createLoggerWithSink', () => {
         data: undefined,
       })
     })
+
+    it('НЕ добавляет breadcrumb в dev', () => {
+      const sink = makeSink({ isProduction: false })
+      const log = createLoggerWithSink('redis', sink)
+      log.warn('connection refused')
+      expect(sink.output).toHaveBeenCalledWith('warn', 'redis', 'connection refused', [])
+      expect(sink.addBreadcrumb).not.toHaveBeenCalled()
+    })
   })
 
   describe('error', () => {
@@ -112,5 +120,13 @@ describe('createLoggerWithSink', () => {
       expect(sink.captureException).not.toHaveBeenCalled()
       expect(sink.captureMessage).not.toHaveBeenCalled()
     })
+  })
+})
+
+describe('createLogger cache', () => {
+  it('returns same instance for same tag', () => {
+    const a = createLogger('cache-test')
+    const b = createLogger('cache-test')
+    expect(a).toBe(b)
   })
 })
