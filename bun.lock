@@ -33,8 +33,12 @@
         "@sentry/core": "^10.52.0",
         "@sentry/vite-plugin": "^5.0.0",
         "@sentry/vue": "^10.52.0",
+        "bull": "^4.0.0",
         "nuxt": "^4.4.5",
       },
+      "optionalPeers": [
+        "bull",
+      ],
     },
     "playground": {
       "name": "nuxt-sentry-playground",
