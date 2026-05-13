@@ -34,26 +34,28 @@ export function instrumentQueueProducer<T>(queue: Queue.Queue<T>): Queue.Queue<T
     const bodySize = JSON.stringify(data).length
 
     return Sentry.startNewTrace(async () =>
-      Sentry.startSpan(
-        {
-          op: 'queue.publish',
-          name: queue.name,
-          attributes: {
-            'messaging.message.id': jobType,
-            'messaging.destination.name': queue.name,
-            'messaging.message.body.size': bodySize,
+      Sentry.startSpan({ name: `queue.publish/${queue.name}` }, async () =>
+        Sentry.startSpan(
+          {
+            op: 'queue.publish',
+            name: queue.name,
+            attributes: {
+              'messaging.message.id': jobType,
+              'messaging.destination.name': queue.name,
+              'messaging.message.body.size': bodySize,
+            },
           },
-        },
-        async () => {
-          const traceData = Sentry.getTraceData()
-          const enrichedData: Record<string, unknown> = {
-            ...data,
-            _sentryTrace: traceData?.['sentry-trace'],
-            _sentryBaggage: traceData?.baggage,
-            _sentryPublishedAt: Date.now(),
-          }
-          return isNamed ? originalAdd(jobType, enrichedData, opts) : originalAdd(enrichedData, opts)
-        },
+          async () => {
+            const traceData = Sentry.getTraceData()
+            const enrichedData: Record<string, unknown> = {
+              ...data,
+              _sentryTrace: traceData?.['sentry-trace'],
+              _sentryBaggage: traceData?.baggage,
+              _sentryPublishedAt: Date.now(),
+            }
+            return isNamed ? originalAdd(jobType, enrichedData, opts) : originalAdd(enrichedData, opts)
+          },
+        ),
       ),
     )
   }) as typeof queue.add
@@ -67,29 +69,31 @@ export async function withSentryConsumer<T, R>(queueName: string, job: Queue.Job
   const receiveLatency = _sentryPublishedAt ? Date.now() - _sentryPublishedAt : undefined
 
   async function processJob() {
-    return Sentry.startSpan(
-      {
-        op: 'queue.process',
-        name: queueName,
-        attributes: {
-          'messaging.message.id': String(job.id),
-          'messaging.destination.name': queueName,
-          'messaging.message.body.size': JSON.stringify(job.data).length,
-          'messaging.message.retry.count': job.attemptsMade,
-          ...(receiveLatency !== undefined && { 'messaging.message.receive.latency': receiveLatency }),
+    return Sentry.startSpan({ name: `queue.process/${queueName}` }, async (parentSpan) =>
+      Sentry.startSpan(
+        {
+          op: 'queue.process',
+          name: queueName,
+          attributes: {
+            'messaging.message.id': String(job.id),
+            'messaging.destination.name': queueName,
+            'messaging.message.body.size': JSON.stringify(job.data).length,
+            'messaging.message.retry.count': job.attemptsMade,
+            ...(receiveLatency !== undefined && { 'messaging.message.receive.latency': receiveLatency }),
+          },
         },
-      },
-      async (span) => {
-        try {
-          const result = await fn()
-          span.setStatus({ code: 1, message: 'ok' })
-          return result
-        } catch (error) {
-          span.setStatus({ code: 2, message: 'error' })
-          Sentry.captureException(error)
-          throw error
-        }
-      },
+        async () => {
+          try {
+            const result = await fn()
+            parentSpan.setStatus({ code: 1, message: 'ok' })
+            return result
+          } catch (error) {
+            parentSpan.setStatus({ code: 2, message: 'error' })
+            Sentry.captureException(error)
+            throw error
+          }
+        },
+      ),
     )
   }
 

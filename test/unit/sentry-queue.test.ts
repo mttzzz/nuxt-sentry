@@ -62,6 +62,12 @@ describe('instrumentQueueProducer', () => {
     })
     expect(typeof data._sentryPublishedAt).toBe('number')
     expect(opts).toEqual({ delay: 100 })
+
+    expect(startSpanMock).toHaveBeenCalledTimes(2)
+    const outerSpanCall = startSpanMock.mock.calls[0] as [{ name: string }, unknown]
+    const innerSpanCall = startSpanMock.mock.calls[1] as [{ op: string; name: string }, unknown]
+    expect(outerSpanCall[0]).toEqual({ name: 'queue.publish/media' })
+    expect(innerSpanCall[0]).toMatchObject({ op: 'queue.publish', name: 'media' })
   })
 
   it('инжектит trace headers при named-style add(name, data, opts)', async () => {
@@ -99,6 +105,12 @@ describe('withSentryConsumer', () => {
     const continueCall = continueTraceMock.mock.calls[0] as [unknown, unknown]
     expect(continueCall[0]).toEqual({ sentryTrace: 'abc', baggage: 'b' })
     expect(startNewTraceMock).not.toHaveBeenCalled()
+
+    expect(startSpanMock).toHaveBeenCalledTimes(2)
+    const outerCall = startSpanMock.mock.calls[0] as [{ name: string }, unknown]
+    const innerCall = startSpanMock.mock.calls[1] as [{ op: string; name: string }, unknown]
+    expect(outerCall[0]).toEqual({ name: 'queue.process/media' })
+    expect(innerCall[0]).toMatchObject({ op: 'queue.process', name: 'media' })
   })
 
   it('startNewTrace когда _sentryTrace отсутствует', async () => {
