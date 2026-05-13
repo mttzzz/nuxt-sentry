@@ -42,6 +42,25 @@ export interface ModuleOptions {
    * в Sentry (страховка от прод-Sentry-noise из test-image'ов). Default: true.
    */
   excludeLocalhostInProd?: boolean
+  /*
+   * Path к модулю с default export-функцией:
+   *   filter(error) → boolean — return false → событие НЕ шлётся в Sentry.
+   *
+   * Use case: project-specific skip-патерны ("Cannot find static asset", etc).
+   * Если не задано — все non-4xx ошибки идут в Sentry (default-фильтрация 4xx работает всегда).
+   *
+   * Пример: errorReportFilter: '~/server/utils/error-filter'
+   */
+  errorReportFilter?: string
+  /*
+   * Path к модулю с default export-функцией:
+   *   enricher(error, event) → { extra?, tags? } — merge'ится поверх default
+   *   buildSentryReport (url/method/headers/cause/appData).
+   *
+   * Use case: project-specific дополнительный контекст для Sentry-issue.
+   * Пример: errorReportEnricher: '~/server/utils/error-enricher'
+   */
+  errorReportEnricher?: string
 }
 
 export interface ResolvedModuleOptions {
@@ -58,6 +77,8 @@ export interface ResolvedModuleOptions {
   additionalIgnorePatterns: (string | RegExp)[]
   ignoredRoutes: string[]
   excludeLocalhostInProd: boolean
+  errorReportFilter?: string
+  errorReportEnricher?: string
 }
 
 /*
