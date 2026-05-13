@@ -13,6 +13,7 @@ export default defineNuxtPlugin(async (nuxtApp) => {
     dsn: config.dsn,
     tunnel: config.tunnelEndpoint,
     enabled: shouldEnableClientSentry({
+      // oxlint-disable-next-line typescript/no-unsafe-assignment, typescript/no-unsafe-member-access -- import.meta.env is virtual module, typed as error but safe at runtime
       isProd: import.meta.env.PROD,
       hostname: globalThis.location.hostname,
       excludeLocalhost: config.excludeLocalhostInProd
@@ -29,17 +30,18 @@ export default defineNuxtPlugin(async (nuxtApp) => {
     beforeSend: createSentryStaleChunkFilter(),
     tracePropagationTargets,
     ignoreSpans: [
-      { op: /^browser\.(cache|connect|DNS)$/ },
-      { op: "resource.other", name: /.+\.(woff2|woff|ttf|eot)$/ },
-      { op: "resource.link", name: /.+\.css.*$/ },
-      { op: /resource\.(link|script)/, name: /.+\.js.*$/ },
-      { op: /resource\.(other|img)/, name: /.+\.(png|svg|jpeg|jpg|gif|bmp|tif|tiff|webp|avif|heic|heif|ico).*$/ },
+      { op: /^browser\.(cache|connect|DNS)$/u },
+      { op: "resource.other", name: /.+\.(woff2|woff|ttf|eot)$/u },
+      { op: "resource.link", name: /.+\.css.*$/u },
+      { op: /resource\.(link|script)/u, name: /.+\.js.*$/u },
+      { op: /resource\.(other|img)/u, name: /.+\.(png|svg|jpeg|jpg|gif|bmp|tif|tiff|webp|avif|heic|heif|ico).*$/u },
       { op: "measure" }
     ],
     debug: false,
     integrations: [
       Sentry.browserTracingIntegration({ router }),
       Sentry.vueIntegration({ app: nuxtApp.vueApp, attachErrorHandler: false }),
+      // oxlint-disable-next-line typescript/no-unsafe-call -- replayIntegration from @sentry/browser is safe, typed as error due to module resolution
       replayIntegration({
         blockAllMedia: false,
         maskAllInputs: false,

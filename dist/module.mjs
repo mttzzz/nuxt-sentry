@@ -10,20 +10,22 @@ const DEFAULTS = {
   queueTracesSampleRate: 0.1,
   replaysSessionSampleRate: 0.1,
   replaysOnErrorSampleRate: 0.1,
-  tracePropagationTargets: [/^\/api\//],
+  tracePropagationTargets: [/^\/api\//u],
   additionalIgnorePatterns: [],
-  ignoredRoutes: [
-    "/api/sentry-tunnel",
-    "/_nuxt",
-    "/api/ws",
-    "/api/health",
-    "/__nuxt_error"
-  ],
+  ignoredRoutes: ["/api/sentry-tunnel", "/_nuxt", "/api/ws", "/api/health", "/__nuxt_error"],
   excludeLocalhostInProd: true
 };
+function buildVirtualReexport(userPath, fallback) {
+  if (userPath) {
+    return `export { default } from ${JSON.stringify(userPath)}
+`;
+  }
+  return `export default ${fallback}
+`;
+}
 function serializeBuildLiteral(value) {
   if (Array.isArray(value)) {
-    return `[${value.map(serializeBuildLiteral).join(",")}]`;
+    return `[${value.map((v) => serializeBuildLiteral(v)).join(",")}]`;
   }
   if (value instanceof RegExp) {
     return value.toString();
@@ -45,10 +47,28 @@ const module$1 = defineNuxtModule({
   defaults: {},
   setup(opts, nuxt) {
     const resolver = createResolver(import.meta.url);
-    addServerImports({
-      name: "instrumentPostgresJs",
-      from: resolver.resolve("./runtime/utils/instrument-postgres-js")
-    });
+    addServerImports([
+      {
+        name: "instrumentPostgresJs",
+        from: resolver.resolve("./runtime/utils/instrument-postgres-js")
+      },
+      {
+        name: "createLogger",
+        from: resolver.resolve("./runtime/utils/logger")
+      },
+      {
+        name: "createLoggerWithSink",
+        from: resolver.resolve("./runtime/utils/logger")
+      },
+      {
+        name: "withCronMonitor",
+        from: resolver.resolve("./runtime/utils/sentry-cron")
+      },
+      {
+        name: "defineSentryTask",
+        from: resolver.resolve("./runtime/utils/define-sentry-task")
+      }
+    ]);
     if (nuxt.options._prepare) {
       return;
     }
@@ -109,11 +129,25 @@ const module$1 = defineNuxtModule({
         ""
       ].join("\n")
     });
-    nuxt.options.alias = nuxt.options.alias || {};
+    const errorFilterTpl = addTemplate({
+      filename: "nuxt-sentry-error-filter.mjs",
+      write: true,
+      getContents: () => buildVirtualReexport(opts.errorReportFilter, "() => true")
+    });
+    const errorEnricherTpl = addTemplate({
+      filename: "nuxt-sentry-error-enricher.mjs",
+      write: true,
+      getContents: () => buildVirtualReexport(opts.errorReportEnricher, "() => ({})")
+    });
+    nuxt.options.alias ??= {};
     nuxt.options.alias["#nuxt-sentry/config"] = buildConfigTpl.dst;
-    nuxt.options.nitro = nuxt.options.nitro || {};
-    nuxt.options.nitro.alias = nuxt.options.nitro.alias || {};
+    nuxt.options.alias["#nuxt-sentry/error-filter"] = errorFilterTpl.dst;
+    nuxt.options.alias["#nuxt-sentry/error-enricher"] = errorEnricherTpl.dst;
+    nuxt.options.nitro ??= {};
+    nuxt.options.nitro.alias ??= {};
     nuxt.options.nitro.alias["#nuxt-sentry/config"] = buildConfigTpl.dst;
+    nuxt.options.nitro.alias["#nuxt-sentry/error-filter"] = errorFilterTpl.dst;
+    nuxt.options.nitro.alias["#nuxt-sentry/error-enricher"] = errorEnricherTpl.dst;
     nuxt.options.routeRules = defu(nuxt.options.routeRules, {
       [resolved.tunnelEndpoint]: { cors: true }
     });
@@ -129,7 +163,7 @@ const module$1 = defineNuxtModule({
       mode: "client"
     });
     if (process.env.NODE_ENV === "production" && process.env.SENTRY_AUTH_TOKEN) {
-      nuxt.options.vite.plugins = nuxt.options.vite.plugins || [];
+      nuxt.options.vite.plugins ??= [];
       const plugins = Array.isArray(nuxt.options.vite.plugins) ? nuxt.options.vite.plugins : [nuxt.options.vite.plugins];
       plugins.push(
         sentryVitePlugin({
@@ -146,10 +180,12 @@ const module$1 = defineNuxtModule({
       nuxt.options.vite.plugins = plugins;
     }
     nuxt.hook("nitro:config", (nitroConfig) => {
-      if (process.env.NODE_ENV !== "production") return;
+      if (process.env.NODE_ENV !== "production") {
+        return;
+      }
       const instrumentPath = resolver.resolve("./runtime/instrument.server");
-      nitroConfig.rollupConfig ||= {};
-      nitroConfig.rollupConfig.plugins ||= [];
+      nitroConfig.rollupConfig ??= {};
+      nitroConfig.rollupConfig.plugins ??= [];
       const plugins = Array.isArray(nitroConfig.rollupConfig.plugins) ? nitroConfig.rollupConfig.plugins : [nitroConfig.rollupConfig.plugins];
       const instrumentReplacements = {
         __NUXT_SENTRY_DSN__: serializeBuildLiteral(resolved.dsn),
@@ -175,7 +211,9 @@ const module$1 = defineNuxtModule({
             }
             return { code: replaced, map: null };
           }
-          if (!chunk.isEntry) return null;
+          if (!chunk.isEntry) {
+            return null;
+          }
           return { code: `import './instrument.server.mjs';
 ${code}`, map: null };
         }

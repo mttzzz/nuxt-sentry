@@ -34,6 +34,8 @@ export interface ModuleOptions {
      * в Sentry (страховка от прод-Sentry-noise из test-image'ов). Default: true.
      */
     excludeLocalhostInProd?: boolean;
+    errorReportFilter?: string;
+    errorReportEnricher?: string;
 }
 export interface ResolvedModuleOptions {
     dsn: string;
@@ -49,6 +51,8 @@ export interface ResolvedModuleOptions {
     additionalIgnorePatterns: (string | RegExp)[];
     ignoredRoutes: string[];
     excludeLocalhostInProd: boolean;
+    errorReportFilter?: string;
+    errorReportEnricher?: string;
 }
 export interface PublicRuntimeSentryConfig {
     dsn: string;
