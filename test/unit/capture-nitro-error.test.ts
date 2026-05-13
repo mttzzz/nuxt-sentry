@@ -62,6 +62,13 @@ describe('captureNitroError', () => {
       expect.objectContaining({ url: 'Unknown URL', method: 'Unknown Method' }),
     )
   })
+
+  it("НЕ шлёт ошибку 'Cannot find static asset' (Nuxt 404 на missing asset — шум)", () => {
+    const error = new Error('Cannot find static asset /_nuxt/foo.js')
+    captureNitroError(error, { event: { path: '/_nuxt/foo.js', method: 'GET' } })
+    expect(captureExceptionMock).not.toHaveBeenCalled()
+    expect(withScopeMock).not.toHaveBeenCalled()
+  })
 })
 
 describe('captureNitroError — filter + enricher', () => {

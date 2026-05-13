@@ -43,6 +43,16 @@ function getStatusCode(error: unknown): number | undefined {
   return undefined
 }
 
+function getErrorMessage(error: unknown): string | undefined {
+  if (typeof error === 'object' && error !== null && 'message' in error) {
+    const value = (error as { message?: unknown }).message
+    if (typeof value === 'string') {
+      return value
+    }
+  }
+  return undefined
+}
+
 export function captureNitroError(
   error: unknown,
   context: NitroErrorContext,
@@ -50,6 +60,16 @@ export function captureNitroError(
 ): void {
   const statusCode = getStatusCode(error)
   if (statusCode !== undefined && statusCode >= 400 && statusCode < 500) {
+    return
+  }
+
+  /*
+   * Nuxt бросает 'Cannot find static asset ...' на любой 404 для /_nuxt/* или
+   * /public/*. У продакшна это шум от stale-hash в браузерах после деплоя —
+   * не actionable, в Sentry не репортим. Skip применяется ко всем проектам.
+   */
+  const message = getErrorMessage(error)
+  if (message?.includes('Cannot find static asset')) {
     return
   }
 

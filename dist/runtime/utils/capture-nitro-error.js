@@ -9,9 +9,22 @@ function getStatusCode(error) {
   }
   return void 0;
 }
+function getErrorMessage(error) {
+  if (typeof error === "object" && error !== null && "message" in error) {
+    const value = error.message;
+    if (typeof value === "string") {
+      return value;
+    }
+  }
+  return void 0;
+}
 export function captureNitroError(error, context, options) {
   const statusCode = getStatusCode(error);
   if (statusCode !== void 0 && statusCode >= 400 && statusCode < 500) {
+    return;
+  }
+  const message = getErrorMessage(error);
+  if (message?.includes("Cannot find static asset")) {
     return;
   }
   const { filter, enricher } = options ?? {};
