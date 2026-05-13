@@ -124,5 +124,6 @@ Default report: `url`, `method`, `headers` (JSON-serialized), `error.cause` (с 
 ```sh
 bun run test       # vitest run (unit + e2e fixtures)
 bun run test:types # vue-tsc --noEmit
-bun run lint       # eslint
+bun run lint       # oxlint
+bun run fmt        # oxfmt
 ```
