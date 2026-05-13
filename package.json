@@ -47,6 +47,7 @@
   },
   "devDependencies": {
     "@mttzzz/nuxt-stale-deploy-guard": "github:mttzzz/nuxt-stale-deploy-guard#main",
+    "bull": "^4.16.5",
     "@nuxt/devtools": "^3.2.4",
     "@nuxt/module-builder": "^1.0.2",
     "@nuxt/schema": "^4.4.5",
