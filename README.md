@@ -49,6 +49,76 @@ export default defineNuxtConfig({
 - `NUXT_TEST_MODE=1` (через `runtimeConfig.testMode`) — tunnel отвечает 204, не форвардит.
 - `SENTRY_AUTH_TOKEN` — build-time, для sourcemap upload через `@sentry/vite-plugin`.
 
+## Server-side utilities (auto-imported)
+
+После регистрации модуля в server-runtime'е consumer'а доступны следующие auto-imports — без явного `import`:
+
+### `createLogger(tag) → Logger`
+
+```ts
+const log = createLogger('amo-sync')
+log.debug('low-level diag', { count }) // off в production
+log.info('synced ok', { count }) // + Sentry breadcrumb (info)
+log.warn('rate limit hit', { retry: 3 }) // + Sentry breadcrumb (warning)
+log.error('upstream failed', err) // → Sentry captureException (Error в args) или captureMessage
+```
+
+Семантика по уровням и breadcrumb-механика — в `src/runtime/utils/logger.ts`.
+
+### `defineSentryTask({ meta, run })`
+
+```ts
+export default defineSentryTask({
+  meta: { name: 'amo-sync', description: 'Sync Amo entities', cron: '*/5 * * * *' },
+  async run({ logger }) {
+    logger.info('sync start')
+    return { synced: 5 }
+  },
+})
+```
+
+Получает `logger` с тегом `task:<name>`, оборачивает в `Sentry.startNewTrace + startSpan(op:'task') + withMonitor` (если есть `cron`). Catch внутри — error не пробрасывается, возвращается `{ result: 'error', message }`.
+
+### `withCronMonitor(slug, schedule, fn, opts?)`
+
+Низкоуровневый wrapper для случаев вне Nitro task'а. `defineSentryTask` использует его внутри.
+
+### `instrumentPostgresJs(sql)`
+
+(существует с v0.2) — оборачивает postgres-js клиент для Sentry DB spans на Bun.
+
+## Sub-path exports (явный import)
+
+```ts
+// Bull queue tracing (opt-in: peer-dep bull)
+import { instrumentQueueProducer, withSentryConsumer } from '@mttzzz/nuxt-sentry/queue'
+
+// Client logger (app/, не auto-import)
+import { createLogger } from '@mttzzz/nuxt-sentry/logger/client'
+```
+
+## Error pipeline customization
+
+В `nuxt.config.ts`:
+
+```ts
+sentry: {
+  dsn: '...',
+  project: '...',
+  cachePrefix: '...',
+
+  // Path к модулю с default export — функция (error) → boolean
+  // false → событие НЕ шлётся в Sentry (после default 4xx-skip)
+  errorReportFilter: '~/server/utils/error-filter',
+
+  // Path к модулю с default export — функция (error, event) → { extra?, tags? }
+  // Merge'ится поверх default extras (url/method/headers/cause/appData)
+  errorReportEnricher: '~/server/utils/error-enricher',
+}
+```
+
+Default report: `url`, `method`, `headers` (JSON-serialized), `error.cause` (с AWS-style $metadata), `error.data` (h3 createError data → `appData`). Tag: `source: nitro-error-hook`.
+
 ## Тесты
 
 ```sh
