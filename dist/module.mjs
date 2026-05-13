@@ -1,3 +1,5 @@
+import { existsSync } from 'node:fs';
+import { resolve, isAbsolute } from 'node:path';
 import { defineNuxtModule, createResolver, addServerImports, addTemplate, addServerPlugin, addServerHandler, addPlugin } from '@nuxt/kit';
 import { sentryVitePlugin } from '@sentry/vite-plugin';
 import { defu } from 'defu';
@@ -15,9 +17,27 @@ const DEFAULTS = {
   ignoredRoutes: ["/api/sentry-tunnel", "/_nuxt", "/api/ws", "/api/health", "/__nuxt_error"],
   excludeLocalhostInProd: true
 };
-function buildVirtualReexport(userPath, fallback) {
-  if (userPath) {
-    return `export { default } from ${JSON.stringify(userPath)}
+function resolveSourcePath(userPath, rootDir, srcDir) {
+  let absolute;
+  if (userPath.startsWith("~~/")) {
+    absolute = resolve(rootDir, userPath.slice(3));
+  } else if (userPath.startsWith("~/") || userPath.startsWith("@/")) {
+    absolute = resolve(srcDir, userPath.slice(2));
+  } else if (isAbsolute(userPath)) {
+    absolute = userPath;
+  } else {
+    absolute = resolve(rootDir, userPath);
+  }
+  for (const ext of ["", ".ts", ".mts", ".js", ".mjs"]) {
+    if (existsSync(absolute + ext)) {
+      return absolute;
+    }
+  }
+  return null;
+}
+function buildVirtualReexport(absoluteSourcePath, fallback) {
+  if (absoluteSourcePath) {
+    return `export { default } from ${JSON.stringify(absoluteSourcePath)}
 `;
   }
   return `export default ${fallback}
@@ -129,15 +149,31 @@ const module$1 = defineNuxtModule({
         ""
       ].join("\n")
     });
+    function resolvePathOptionOrThrow(optionName, userPath) {
+      if (!userPath) {
+        return null;
+      }
+      const resolvedAbs = resolveSourcePath(userPath, nuxt.options.rootDir, nuxt.options.srcDir);
+      if (!resolvedAbs) {
+        throw new Error(
+          `[nuxt-sentry] sentry.${optionName} = ${JSON.stringify(userPath)}: file not found.
+Hint: in Nuxt 4 \`~/\` points to \`app/\` (Vue side), \`~~/\` to project root.
+Server-side files (e.g. server/utils/error-filter.ts) need \`~~/server/...\`.`
+        );
+      }
+      return resolvedAbs;
+    }
+    const errorFilterPath = resolvePathOptionOrThrow("errorReportFilter", opts.errorReportFilter);
+    const errorEnricherPath = resolvePathOptionOrThrow("errorReportEnricher", opts.errorReportEnricher);
     const errorFilterTpl = addTemplate({
       filename: "nuxt-sentry-error-filter.mjs",
       write: true,
-      getContents: () => buildVirtualReexport(opts.errorReportFilter, "() => true")
+      getContents: () => buildVirtualReexport(errorFilterPath, "() => true")
     });
     const errorEnricherTpl = addTemplate({
       filename: "nuxt-sentry-error-enricher.mjs",
       write: true,
-      getContents: () => buildVirtualReexport(opts.errorReportEnricher, "() => ({})")
+      getContents: () => buildVirtualReexport(errorEnricherPath, "() => ({})")
     });
     nuxt.options.alias ??= {};
     nuxt.options.alias["#nuxt-sentry/config"] = buildConfigTpl.dst;

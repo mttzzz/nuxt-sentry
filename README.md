@@ -109,13 +109,15 @@ sentry: {
 
   // Path к модулю с default export — функция (error) → boolean
   // false → событие НЕ шлётся в Sentry (после default 4xx-skip)
-  errorReportFilter: '~/server/utils/error-filter',
+  errorReportFilter: '~~/server/utils/error-filter',
 
   // Path к модулю с default export — функция (error, event) → { extra?, tags? }
   // Merge'ится поверх default extras (url/method/headers/cause/appData)
-  errorReportEnricher: '~/server/utils/error-enricher',
+  errorReportEnricher: '~~/server/utils/error-enricher',
 }
 ```
+
+**Важно про путь:** в Nuxt 4 `~/` указывает на `app/`, `~~/` — на корень проекта. Поскольку filter/enricher живут в `server/`, используйте `~~/server/...`. Pkg валидирует существование файла на этапе module setup и кидает понятную ошибку, если path не резолвится.
 
 Default report: `url`, `method`, `headers` (JSON-serialized), `error.cause` (с AWS-style $metadata), `error.data` (h3 createError data → `appData`). Tag: `source: nitro-error-hook`.
 

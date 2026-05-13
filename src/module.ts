@@ -1,3 +1,6 @@
+import { existsSync } from 'node:fs'
+import { isAbsolute, resolve as resolvePath } from 'node:path'
+
 import {
   addPlugin,
   addServerHandler,
@@ -37,16 +40,44 @@ const DEFAULTS = {
  *   array   → [el1, el2, ...]
  */
 /*
- * Virtual modules для error-pipeline customization. Если опция не задана —
- * экспортим no-op default. Если задана — re-export user's default из path.
+ * Резолвим Nuxt-style path к абсолютному filesystem пути:
+ *   ~~/...  → rootDir + ...  (project root)
+ *   ~/...   → srcDir + ...   (Nuxt 4: app/)
+ *   @/...   → srcDir + ...   (alias of ~)
+ *   /abs    → as-is
+ *   ./rel   → resolve from rootDir
  *
- * Path-based вместо inline functions: function-literal сериализация в build-config
- * хрупка (closures, scope), path-based — детерминирован.
+ * Возвращает абсолютный путь без расширения (Rollup/Vite сами добавят .ts/.mjs/.js).
+ * Если ничего не нашлось на FS — возвращает null, чтобы caller выдал понятную ошибку.
  */
-function buildVirtualReexport(userPath: string | undefined, fallback: string): string {
-  if (userPath) {
-    /* Nuxt-style ~/... должно резолвиться aliasами consumer'а. Передаём как есть. */
-    return `export { default } from ${JSON.stringify(userPath)}\n`
+function resolveSourcePath(userPath: string, rootDir: string, srcDir: string): string | null {
+  let absolute: string
+  if (userPath.startsWith('~~/')) {
+    absolute = resolvePath(rootDir, userPath.slice(3))
+  } else if (userPath.startsWith('~/') || userPath.startsWith('@/')) {
+    absolute = resolvePath(srcDir, userPath.slice(2))
+  } else if (isAbsolute(userPath)) {
+    absolute = userPath
+  } else {
+    absolute = resolvePath(rootDir, userPath)
+  }
+  for (const ext of ['', '.ts', '.mts', '.js', '.mjs']) {
+    if (existsSync(absolute + ext)) {
+      return absolute
+    }
+  }
+  return null
+}
+
+/*
+ * Virtual modules для error-pipeline customization. Если опция не задана —
+ * экспортим no-op default. Если задана — re-export через АБСОЛЮТНЫЙ путь
+ * (Rollup в Nitro production-build не всегда понимает Nuxt-aliases внутри
+ * .nuxt/cache template'ов, поэтому резолвим заранее).
+ */
+function buildVirtualReexport(absoluteSourcePath: string | null, fallback: string): string {
+  if (absoluteSourcePath) {
+    return `export { default } from ${JSON.stringify(absoluteSourcePath)}\n`
   }
   return `export default ${fallback}\n`
 }
@@ -189,16 +220,42 @@ export default defineNuxtModule<ModuleOptions>({
         ].join('\n'),
     })
 
+    /*
+     * Резолвим path-based опции заранее: проверяем, что файл существует, и
+     * подставляем абсолютный путь в virtual template. Иначе ошибка вылезет
+     * только в Docker build / CI с невнятным "ENOENT: no such file or directory".
+     *
+     * Hint в ошибке: типичная путаница в Nuxt 4 — `~/` указывает на `app/`,
+     * а не на корень. Server-side файлы лежат в `server/`, поэтому надо `~~/`.
+     */
+    function resolvePathOptionOrThrow(optionName: string, userPath: string | undefined): string | null {
+      if (!userPath) {
+        return null
+      }
+      const resolvedAbs = resolveSourcePath(userPath, nuxt.options.rootDir, nuxt.options.srcDir)
+      if (!resolvedAbs) {
+        throw new Error(
+          `[nuxt-sentry] sentry.${optionName} = ${JSON.stringify(userPath)}: file not found.\n` +
+            `Hint: in Nuxt 4 \`~/\` points to \`app/\` (Vue side), \`~~/\` to project root.\n` +
+            `Server-side files (e.g. server/utils/error-filter.ts) need \`~~/server/...\`.`,
+        )
+      }
+      return resolvedAbs
+    }
+
+    const errorFilterPath = resolvePathOptionOrThrow('errorReportFilter', opts.errorReportFilter)
+    const errorEnricherPath = resolvePathOptionOrThrow('errorReportEnricher', opts.errorReportEnricher)
+
     const errorFilterTpl = addTemplate({
       filename: 'nuxt-sentry-error-filter.mjs',
       write: true,
-      getContents: () => buildVirtualReexport(opts.errorReportFilter, '() => true'),
+      getContents: () => buildVirtualReexport(errorFilterPath, '() => true'),
     })
 
     const errorEnricherTpl = addTemplate({
       filename: 'nuxt-sentry-error-enricher.mjs',
       write: true,
-      getContents: () => buildVirtualReexport(opts.errorReportEnricher, '() => ({})'),
+      getContents: () => buildVirtualReexport(errorEnricherPath, '() => ({})'),
     })
 
     /*
