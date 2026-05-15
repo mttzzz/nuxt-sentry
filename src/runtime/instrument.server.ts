@@ -18,6 +18,18 @@ import * as Sentry from '@sentry/bun'
 
 import { shouldEnableServerSentry } from './utils/sentry-enabled'
 
+/* Volatile env read через globalThis — обход Rollup constant-folding.
+   `bun nuxt build` запускается с NODE_ENV=production, и плоский `process.env.NODE_ENV`
+   bundler in-line'ит в литерал "production", потом DCE-вырезает `if (env.nodeEnv !== 'production')`
+   из shouldEnableServerSentry, и runtime-флаг NODE_ENV перестаёт работать (build artifact
+   проверял только SENTRY_DISABLED). Через globalThis bundler не может статически резолвить
+   → проверка остаётся в runtime. */
+function readEnvVolatile(key: string): string | undefined {
+  return (globalThis as { process?: { env?: Record<string, string | undefined> } }).process?.env?.[
+    key
+  ]
+}
+
 // oxlint-disable no-underscore-dangle -- build-time placeholders replaced by renderChunk in module.ts; naming convention required by token-substitution regex
 declare const __NUXT_SENTRY_DSN__: string
 declare const __NUXT_SENTRY_CACHE_PREFIX__: string
@@ -32,8 +44,8 @@ Sentry.init({
   release: __NUXT_SENTRY_RELEASE__,
 
   enabled: shouldEnableServerSentry({
-    nodeEnv: process.env.NODE_ENV,
-    sentryDisabled: process.env.SENTRY_DISABLED,
+    nodeEnv: readEnvVolatile('NODE_ENV'),
+    sentryDisabled: readEnvVolatile('SENTRY_DISABLED'),
   }),
 
   integrations: [

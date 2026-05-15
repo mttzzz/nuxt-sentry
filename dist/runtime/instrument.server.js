@@ -1,11 +1,14 @@
 import * as Sentry from "@sentry/bun";
 import { shouldEnableServerSentry } from "./utils/sentry-enabled.js";
+function readEnvVolatile(key) {
+  return globalThis.process?.env?.[key];
+}
 Sentry.init({
   dsn: __NUXT_SENTRY_DSN__,
   release: __NUXT_SENTRY_RELEASE__,
   enabled: shouldEnableServerSentry({
-    nodeEnv: process.env.NODE_ENV,
-    sentryDisabled: process.env.SENTRY_DISABLED
+    nodeEnv: readEnvVolatile("NODE_ENV"),
+    sentryDisabled: readEnvVolatile("SENTRY_DISABLED")
   }),
   integrations: [
     /* Explicitly keep Bun HTTP transactions even if SDK defaults change. */
