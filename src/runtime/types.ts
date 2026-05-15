@@ -102,4 +102,10 @@ export interface PublicRuntimeSentryConfig {
   replaysOnErrorSampleRate: number
   ignoredRoutes: string[]
   excludeLocalhostInProd: boolean
+  /*
+   * Release name (commit SHA или semver) — теггирует events в Sentry,
+   * привязывает sourcemaps и suspect-commits. Читается из `process.env.SENTRY_RELEASE`
+   * на build-time. Если не задан — events идут без release, sourcemap upload пропускается.
+   */
+  release?: string
 }

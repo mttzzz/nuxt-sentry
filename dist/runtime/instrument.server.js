@@ -2,6 +2,7 @@ import * as Sentry from "@sentry/bun";
 import { shouldEnableServerSentry } from "./utils/sentry-enabled.js";
 Sentry.init({
   dsn: __NUXT_SENTRY_DSN__,
+  release: __NUXT_SENTRY_RELEASE__,
   enabled: shouldEnableServerSentry({
     nodeEnv: process.env.NODE_ENV,
     sentryDisabled: process.env.SENTRY_DISABLED

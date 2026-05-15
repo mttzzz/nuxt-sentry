@@ -25,6 +25,7 @@ export default defineNuxtPlugin(async (nuxtApp) => {
   Sentry.init({
     app: nuxtApp.vueApp,
     dsn: config.dsn,
+    release: config.release,
     tunnel: config.tunnelEndpoint,
     enabled: shouldEnableClientSentry({
       // oxlint-disable-next-line typescript/no-unsafe-assignment, typescript/no-unsafe-member-access -- import.meta.env is virtual module, typed as error but safe at runtime

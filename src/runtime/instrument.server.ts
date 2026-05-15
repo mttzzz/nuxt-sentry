@@ -24,10 +24,12 @@ declare const __NUXT_SENTRY_CACHE_PREFIX__: string
 declare const __NUXT_SENTRY_TRACES_SAMPLE_RATE__: number
 declare const __NUXT_SENTRY_QUEUE_TRACES_SAMPLE_RATE__: number
 declare const __NUXT_SENTRY_IGNORED_ROUTES__: string[]
+declare const __NUXT_SENTRY_RELEASE__: string | undefined
 // oxlint-enable no-underscore-dangle
 
 Sentry.init({
   dsn: __NUXT_SENTRY_DSN__,
+  release: __NUXT_SENTRY_RELEASE__,
 
   enabled: shouldEnableServerSentry({
     nodeEnv: process.env.NODE_ENV,

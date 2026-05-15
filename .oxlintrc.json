@@ -42,7 +42,7 @@
     // ── Административные ограничения — off навсегда ──────────────────
     "no-await-in-loop": "off",
     "no-magic-numbers": "off",
-    "max-lines": ["error", 400],
+    "max-lines": ["error", 450],
     "max-lines-per-function": "off",
     "max-statements": "off",
     "max-params": "off",

@@ -66,4 +66,5 @@ export interface PublicRuntimeSentryConfig {
     replaysOnErrorSampleRate: number;
     ignoredRoutes: string[];
     excludeLocalhostInProd: boolean;
+    release?: string;
 }

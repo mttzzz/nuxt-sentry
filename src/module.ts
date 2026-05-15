@@ -177,6 +177,14 @@ export default defineNuxtModule<ModuleOptions>({
 
     const tunnelIngestUrl = buildTunnelIngestUrl(resolved.dsn)
 
+    /*
+     * Release name. Читается build-time из env (CI инжектит SENTRY_RELEASE=<commit-sha>
+     * через Docker build-arg). Если не задан или пустой — release-фичи (sourcemap
+     * upload, setCommits, deploy) выключены, events идут без release-тега.
+     */
+    const releaseRaw = process.env.SENTRY_RELEASE?.trim()
+    const release = releaseRaw && releaseRaw.length > 0 ? releaseRaw : undefined
+
     /* RuntimeConfig.public.sentry — сериализуемая часть (без RegExp). */
     const publicConfig: PublicRuntimeSentryConfig = {
       dsn: resolved.dsn,
@@ -190,6 +198,7 @@ export default defineNuxtModule<ModuleOptions>({
       replaysOnErrorSampleRate: resolved.replaysOnErrorSampleRate,
       ignoredRoutes: resolved.ignoredRoutes,
       excludeLocalhostInProd: resolved.excludeLocalhostInProd,
+      release,
     }
     nuxt.options.runtimeConfig.public.sentry = defu(
       nuxt.options.runtimeConfig.public.sentry as object | undefined,
@@ -319,6 +328,20 @@ export default defineNuxtModule<ModuleOptions>({
           authToken: process.env.SENTRY_AUTH_TOKEN,
           silent: true,
           telemetry: false,
+          /*
+           * Release создаётся в Sentry только если SENTRY_RELEASE задан в env билда.
+           * setCommits.auto → линкует коммиты от prev-release до current (suspect commits).
+           * deploy.env=production → метит release как задеплоенный (Releases UI).
+           */
+          ...(release
+            ? {
+                release: {
+                  name: release,
+                  setCommits: { auto: true, ignoreMissing: true },
+                  deploy: { env: 'production' },
+                },
+              }
+            : {}),
           sourcemaps: {
             filesToDeleteAfterUpload: ['.output/**/public/**/*.map'],
           },
@@ -352,6 +375,11 @@ export default defineNuxtModule<ModuleOptions>({
         __NUXT_SENTRY_TRACES_SAMPLE_RATE__: serializeBuildLiteral(resolved.tracesSampleRate),
         __NUXT_SENTRY_QUEUE_TRACES_SAMPLE_RATE__: serializeBuildLiteral(resolved.queueTracesSampleRate),
         __NUXT_SENTRY_IGNORED_ROUTES__: serializeBuildLiteral(resolved.ignoredRoutes),
+        /*
+         * Если release не задан — placeholder резолвится в `undefined` literal,
+         * Sentry.init({ release: undefined }) валидно — SDK пропускает поле.
+         */
+        __NUXT_SENTRY_RELEASE__: serializeBuildLiteral(release),
       }
 
       plugins.push({
