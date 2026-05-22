@@ -5,7 +5,7 @@ import { defineNuxtPlugin, useRouter, useRuntimeConfig } from '#app'
 // @ts-expect-error virtual module emitted by module.ts via addTemplate + alias
 import { additionalIgnorePatterns, tracePropagationTargets } from '#nuxt-sentry/config'
 
-import { buildIgnoreErrors } from './utils/ignore-errors'
+import { buildIgnoreErrors, isIgnoredSentryMessage } from './utils/ignore-errors'
 import { shouldEnableClientSentry } from './utils/sentry-enabled'
 
 /*
@@ -14,6 +14,16 @@ import { shouldEnableClientSentry } from './utils/sentry-enabled'
  * `beforeSend` интегрируется со stale-deploy-guard'ом через peer-import
  * `@mttzzz/nuxt-stale-deploy-guard/sentry` — дропает downstream-TypeError'ы
  * после stale-chunk reload. Эти проекты ставятся вместе.
+ *
+ * `beforeSendLog` дополнительно фильтрует logs (Sentry v10 log API,
+ * `enableLogs: true`). Без него `consoleLoggingIntegration` шлёт ВСЁ что
+ * летит в console.error/warn — включая шум, который мы уже отфильтровали
+ * для exceptions через `ignoreErrors`. Сценарий: Nuxt в `app:error` hook
+ * сначала consola.error'ит ошибку (→ Sentry log через console-integration),
+ * потом hook handler делает Sentry.captureException (→ exception, дропается
+ * beforeSend stale-chunk-filter'ом). В итоге exception отфильтрован, а
+ * log остаётся — для stale-chunk reload-сценария это duplicate noise.
+ * Применяем тот же набор паттернов и для логов, через isIgnoredSentryMessage.
  */
 export default defineNuxtPlugin(async (nuxtApp) => {
   // Динамический импорт чтобы peer (stale-deploy-guard) не превращался в hard-dep на этапе compile.
@@ -21,6 +31,7 @@ export default defineNuxtPlugin(async (nuxtApp) => {
 
   const config = useRuntimeConfig().public.sentry!
   const router = useRouter()
+  const extraIgnore = additionalIgnorePatterns as (string | RegExp)[]
 
   Sentry.init({
     app: nuxtApp.vueApp,
@@ -41,8 +52,19 @@ export default defineNuxtPlugin(async (nuxtApp) => {
     attachStacktrace: true,
     normalizeDepth: 8,
     maxValueLength: 2000,
-    ignoreErrors: buildIgnoreErrors(additionalIgnorePatterns as (string | RegExp)[]),
+    ignoreErrors: buildIgnoreErrors(extraIgnore),
     beforeSend: createSentryStaleChunkFilter(),
+    beforeSendLog: (log) => {
+      /* `log.message` — ParameterizedString (строка с template-частями). При
+       * console.error("[nuxt] error caught", err) Nuxt сериализует payload в
+       * один body. Берём `.toString()` — стабильно работает и на строке,
+       * и на ParameterizedString-обёртке. */
+      const body = log.message?.toString() ?? ''
+      if (isIgnoredSentryMessage(body, extraIgnore)) {
+        return null
+      }
+      return log
+    },
     tracePropagationTargets: tracePropagationTargets as (string | RegExp)[],
     ignoreSpans: [
       { op: /^browser\.(cache|connect|DNS)$/u },

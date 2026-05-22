@@ -2,12 +2,13 @@ import { replayIntegration } from "@sentry/browser";
 import * as Sentry from "@sentry/vue";
 import { defineNuxtPlugin, useRouter, useRuntimeConfig } from "#app";
 import { additionalIgnorePatterns, tracePropagationTargets } from "#nuxt-sentry/config";
-import { buildIgnoreErrors } from "./utils/ignore-errors.js";
+import { buildIgnoreErrors, isIgnoredSentryMessage } from "./utils/ignore-errors.js";
 import { shouldEnableClientSentry } from "./utils/sentry-enabled.js";
 export default defineNuxtPlugin(async (nuxtApp) => {
   const { createSentryStaleChunkFilter } = await import("@mttzzz/nuxt-stale-deploy-guard/sentry");
   const config = useRuntimeConfig().public.sentry;
   const router = useRouter();
+  const extraIgnore = additionalIgnorePatterns;
   Sentry.init({
     app: nuxtApp.vueApp,
     dsn: config.dsn,
@@ -27,8 +28,15 @@ export default defineNuxtPlugin(async (nuxtApp) => {
     attachStacktrace: true,
     normalizeDepth: 8,
     maxValueLength: 2e3,
-    ignoreErrors: buildIgnoreErrors(additionalIgnorePatterns),
+    ignoreErrors: buildIgnoreErrors(extraIgnore),
     beforeSend: createSentryStaleChunkFilter(),
+    beforeSendLog: (log) => {
+      const body = log.message?.toString() ?? "";
+      if (isIgnoredSentryMessage(body, extraIgnore)) {
+        return null;
+      }
+      return log;
+    },
     tracePropagationTargets,
     ignoreSpans: [
       { op: /^browser\.(cache|connect|DNS)$/u },
