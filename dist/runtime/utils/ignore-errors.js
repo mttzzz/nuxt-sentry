@@ -14,7 +14,7 @@ export const IGNORED_VIEW_TRANSITION_ERRORS = [
    */
   /Skipped ViewTransition/iu
 ];
-export const IGNORED_MANIFEST_POLL_ERRORS = [/\[[A-Z]+\] "[^"]*\/_nuxt\/builds\/(meta\/[^"]+|latest)\.json"/iu];
+export const IGNORED_MANIFEST_POLL_ERRORS = [/\/_nuxt\/builds\/(?:meta\/[\w-]+|latest)\.json/iu];
 export function buildIgnoreErrors(additional = []) {
   return [...IGNORED_VIEW_TRANSITION_ERRORS, ...STALE_CHUNK_PATTERNS, ...IGNORED_MANIFEST_POLL_ERRORS, ...additional];
 }
