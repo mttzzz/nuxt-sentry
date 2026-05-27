@@ -29,8 +29,25 @@ describe('IGNORED_MANIFEST_POLL_ERRORS', () => {
     '[GET] "https://app/_nuxt/builds/meta/abc123.json": <no response> Load failed',
     '[GET] "/_nuxt/builds/latest.json": Network timeout',
     '[POST] "/_nuxt/builds/meta/x.json": failed',
-  ])('matches manifest-poll: %s', (msg) => {
+  ])('matches manifest-poll (raw exception message): %s', (msg) => {
     expect(IGNORED_MANIFEST_POLL_ERRORS.some((p) => p.test(msg))).toBe(true)
+  })
+
+  /*
+   * Регресс kp.modmb.com (30 logs / 4 дня): log-канал
+   * (consoleLoggingIntegration) сериализует FetchError через
+   * `String(arg0) + ' ' + JSON.stringify(normalize(err))`. JSON.stringify
+   * экранирует кавычки вокруг URL → `\"`. Старый паттерн с литеральным `] "`
+   * (без возможного бэкслеша) не матчил это, и manifest-poll шум утекал в
+   * Sentry Logs, хотя как exception (raw message) он корректно фильтровался.
+   * Воспроизводим тем же путём сериализации, что и SDK.
+   */
+  it.each([
+    '[GET] "/_nuxt/builds/meta/4a5f1730-7759-4587-9f1d-9538e7318152.json": <no response> Load failed',
+    '[GET] "/_nuxt/builds/latest.json": <no response> Failed to fetch',
+  ])('matches manifest-poll (JSON-escaped console-log body): %s', (rawMessage) => {
+    const body = `[nuxt] Error fetching app manifest. ${JSON.stringify({ message: rawMessage, name: 'FetchError', stack: 'Zn@https://kp.modmb.com/_nuxt/x.js:1:2' })}`
+    expect(IGNORED_MANIFEST_POLL_ERRORS.some((p) => p.test(body))).toBe(true)
   })
 
   it('не матчит обычные API-ошибки', () => {
@@ -70,5 +87,10 @@ describe('isIgnoredSentryMessage', () => {
 
   it('строковый паттерн матчится как substring', () => {
     expect(isIgnoredSentryMessage('Error: Quota exceeded', ['Quota'])).toBe(true)
+  })
+
+  it('детектит JSON-escaped manifest-poll log body (beforeSendLog путь)', () => {
+    const body = `[nuxt] Error fetching app manifest. ${JSON.stringify({ message: '[GET] "/_nuxt/builds/meta/4a5f1730-7759-4587-9f1d-9538e7318152.json": <no response> Load failed', name: 'FetchError' })}`
+    expect(isIgnoredSentryMessage(body)).toBe(true)
   })
 })

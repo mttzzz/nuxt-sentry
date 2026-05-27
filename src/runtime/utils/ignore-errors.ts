@@ -31,9 +31,19 @@ export const IGNORED_VIEW_TRANSITION_ERRORS: RegExp[] = [
  * устаревшего build'а. На мобильном iOS Safari/Chrome при lock screen, смене
  * сети или переходе в background этот фоновый fetch умирает с
  * `<no response> Load failed` — это network hiccup, не функциональный баг.
- * Формулировка в сообщении ofetch: `[GET] "<url>": <reason>`.
+ *
+ * Паттерн должен ловить ошибку в ДВУХ каналах с разной сериализацией:
+ *   - exception (`ignoreErrors`) — raw ofetch message: `[GET] "<url>": <reason>`
+ *     (кавычки вокруг URL настоящие);
+ *   - log (`beforeSendLog` ← consoleLoggingIntegration) — Nuxt делает
+ *     `console.error("[nuxt] Error fetching app manifest.", err)`, а SDK
+ *     сериализует через `JSON.stringify(normalize(err))`, экранируя кавычки в
+ *     `\"`. Старый паттерн с литеральным `] "` не матчил escaped-форму и шум
+ *     утекал в Sentry Logs (kp.modmb.com: 30 logs / 4 дня).
+ * Поэтому якоримся на сам путь `/_nuxt/builds/...json` — он идентичен в обоих
+ * каналах и не содержит кавычек внутри, поэтому от экранирования не зависит.
  */
-export const IGNORED_MANIFEST_POLL_ERRORS: RegExp[] = [/\[[A-Z]+\] "[^"]*\/_nuxt\/builds\/(meta\/[^"]+|latest)\.json"/iu]
+export const IGNORED_MANIFEST_POLL_ERRORS: RegExp[] = [/\/_nuxt\/builds\/(?:meta\/[\w-]+|latest)\.json/iu]
 
 export function buildIgnoreErrors(additional: (string | RegExp)[] = []): (string | RegExp)[] {
   return [...IGNORED_VIEW_TRANSITION_ERRORS, ...STALE_CHUNK_PATTERNS, ...IGNORED_MANIFEST_POLL_ERRORS, ...additional]
@@ -42,7 +52,9 @@ export function buildIgnoreErrors(additional: (string | RegExp)[] = []): (string
 export function isIgnoredSentryMessage(message: string, additional: (string | RegExp)[] = []): boolean {
   const all = buildIgnoreErrors(additional)
   return all.some((pattern) => {
-    if (typeof pattern === 'string') { return message.includes(pattern) }
+    if (typeof pattern === 'string') {
+      return message.includes(pattern)
+    }
     return pattern.test(message)
   })
 }
