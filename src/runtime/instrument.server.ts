@@ -16,6 +16,7 @@
 
 import * as Sentry from '@sentry/bun'
 
+import { isNoiseEvent } from './utils/before-send'
 import { shouldEnableServerSentry } from './utils/sentry-enabled'
 
 /* Volatile env read через globalThis — обход Rollup constant-folding.
@@ -25,9 +26,7 @@ import { shouldEnableServerSentry } from './utils/sentry-enabled'
    проверял только SENTRY_DISABLED). Через globalThis bundler не может статически резолвить
    → проверка остаётся в runtime. */
 function readEnvVolatile(key: string): string | undefined {
-  return (globalThis as { process?: { env?: Record<string, string | undefined> } }).process?.env?.[
-    key
-  ]
+  return (globalThis as { process?: { env?: Record<string, string | undefined> } }).process?.env?.[key]
 }
 
 // oxlint-disable no-underscore-dangle -- build-time placeholders replaced by renderChunk in module.ts; naming convention required by token-substitution regex
@@ -54,6 +53,8 @@ Sentry.init({
     Sentry.redisIntegration({
       cachePrefixes: [__NUXT_SENTRY_CACHE_PREFIX__],
     }),
+    /* Issues-first: серверный console.warn/error → Issue (через createLogger или сырой). */
+    Sentry.captureConsoleIntegration({ levels: ['warn', 'error'] }),
   ],
 
   tracesSampler: ({ name }: { name?: string }) => {
@@ -69,7 +70,10 @@ Sentry.init({
   sendDefaultPii: true,
   attachStacktrace: true,
   normalizeDepth: 8,
-  enableLogs: true,
+  enableLogs: false,
+
+  /* Дропаем anonymous-recursion/extension шум (под catch-all message-ignoreErrors его не ловит). */
+  beforeSend: (event) => (isNoiseEvent(event) ? null : event),
 
   debug: false,
 })
