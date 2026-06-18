@@ -19,27 +19,26 @@ export interface SentryBreadcrumb {
 export interface LoggerSink {
   isProduction: boolean
   output: (level: LogLevel, tag: string, message: string, args: unknown[]) => void
-  captureException: (error: unknown, ctx: { tags: Record<string, string>; extra: Record<string, unknown> }) => void
-  captureMessage: (
-    message: string,
-    ctx: { level: 'error'; tags: Record<string, string>; extra: Record<string, unknown> },
-  ) => void
+  /* Для warn/error в prod обогащает Sentry-scope (source-тег + extra) на время write().
+   * captureConsoleIntegration ловит console.* внутри этого scope → Issue с контекстом. */
+  withSourceScope: (tag: string, extra: Record<string, unknown>, write: () => void) => void
   addBreadcrumb: (breadcrumb: SentryBreadcrumb) => void
 }
 
 /*
- * Уровни (best-practice Sentry):
- *   debug → console-only, off в production (noise reduction)
- *   info  → console + Sentry breadcrumb (informational notice, не issue)
- *   warn  → console + Sentry breadcrumb (level=warning — контекст для error)
- *   error → console + captureException (Error в args) или captureMessage
- *
- * Breadcrumb попадает в Sentry только если в том же scope сработает error.
+ * Issues-first (см. docs/specs/2026-06-18-issues-first-observability-design.md):
+ *   debug → console-only, off в prod
+ *   info  → console + breadcrumb(level=info) — контекст, НЕ Issue
+ *   warn  → console.warn внутри withSourceScope → Issue(level=warning) через captureConsole
+ *   error → console.error внутри withSourceScope → Issue(level=error) через captureConsole
+ * Capture неявный (captureConsoleIntegration) — logger НЕ зовёт captureException (анти-дубль).
  */
 export function createLoggerWithSink(tag: string, sink: LoggerSink): Logger {
   return {
     debug(message, ...args) {
-      if (sink.isProduction) { return }
+      if (sink.isProduction) {
+        return
+      }
       sink.output('debug', tag, message, args)
     },
     info(message, ...args) {
@@ -49,20 +48,21 @@ export function createLoggerWithSink(tag: string, sink: LoggerSink): Logger {
       }
     },
     warn(message, ...args) {
-      sink.output('warn', tag, message, args)
       if (sink.isProduction) {
-        sink.addBreadcrumb({ category: tag, message, level: 'warning', data: args.length > 0 ? { args } : undefined })
+        sink.withSourceScope(tag, { message, args }, () => {
+          sink.output('warn', tag, message, args)
+        })
+      } else {
+        sink.output('warn', tag, message, args)
       }
     },
     error(message, ...args) {
-      sink.output('error', tag, message, args)
-      if (!sink.isProduction) { return }
-      const firstError = args.find((a): a is Error => a instanceof Error)
-      const tags = { source: tag }
-      if (firstError) {
-        sink.captureException(firstError, { tags, extra: { message, args } })
+      if (sink.isProduction) {
+        sink.withSourceScope(tag, { message, args }, () => {
+          sink.output('error', tag, message, args)
+        })
       } else {
-        sink.captureMessage(message, { level: 'error', tags, extra: { args } })
+        sink.output('error', tag, message, args)
       }
     },
   }
@@ -72,20 +72,16 @@ const defaultSink: LoggerSink = {
   isProduction: process.env.NODE_ENV === 'production',
   output(level, tag, message, args) {
     /* oxlint-disable no-console -- logger is the only place that should use console */
-    const dispatch = {
-      error: console.error,
-      warn: console.warn,
-      info: console.info,
-      debug: console.debug,
-    } as const
+    const dispatch = { error: console.error, warn: console.warn, info: console.info, debug: console.debug } as const
     /* oxlint-enable no-console */
     dispatch[level](`[${tag}]`, message, ...args)
   },
-  captureException(error, ctx) {
-    Sentry.captureException(error, ctx)
-  },
-  captureMessage(message, ctx) {
-    Sentry.captureMessage(message, ctx)
+  withSourceScope(tag, extra, write) {
+    Sentry.withScope((scope) => {
+      scope.setTag('source', tag)
+      scope.setExtras(extra)
+      write()
+    })
   },
   addBreadcrumb(breadcrumb) {
     Sentry.addBreadcrumb(breadcrumb)
@@ -96,7 +92,9 @@ const loggerCache = new Map<string, Logger>()
 
 export function createLogger(tag: string): Logger {
   const cached = loggerCache.get(tag)
-  if (cached) { return cached }
+  if (cached) {
+    return cached
+  }
   const logger = createLoggerWithSink(tag, defaultSink)
   loggerCache.set(tag, logger)
   return logger

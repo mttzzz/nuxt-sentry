@@ -6,8 +6,10 @@ function makeSink(overrides: Partial<LoggerSink> = {}): LoggerSink {
   return {
     isProduction: false,
     output: vi.fn<LoggerSink['output']>(),
-    captureException: vi.fn<LoggerSink['captureException']>(),
-    captureMessage: vi.fn<LoggerSink['captureMessage']>(),
+    /* Мок: withSourceScope сразу вызывает write() — так тест видит и факт обогащения, и output */
+    withSourceScope: vi.fn<LoggerSink['withSourceScope']>((_tag, _extra, write) => {
+      write()
+    }),
     addBreadcrumb: vi.fn<LoggerSink['addBreadcrumb']>(),
     ...overrides,
   }
@@ -15,118 +17,76 @@ function makeSink(overrides: Partial<LoggerSink> = {}): LoggerSink {
 
 describe('createLoggerWithSink', () => {
   describe('debug', () => {
-    it('пишет в output в dev', () => {
-      const sink = makeSink({ isProduction: false })
-      const log = createLoggerWithSink('test', sink)
-      log.debug('hello', 1, 2)
-      expect(sink.output).toHaveBeenCalledWith('debug', 'test', 'hello', [1, 2])
-    })
+    it('output в dev, тишина в prod', () => {
+      const dev = makeSink({ isProduction: false })
+      createLoggerWithSink('t', dev).debug('hi', 1)
+      expect(dev.output).toHaveBeenCalledWith('debug', 't', 'hi', [1])
 
-    it('НЕ пишет в production (noise reduction)', () => {
-      const sink = makeSink({ isProduction: true })
-      const log = createLoggerWithSink('test', sink)
-      log.debug('hello')
-      expect(sink.output).not.toHaveBeenCalled()
+      const prod = makeSink({ isProduction: true })
+      createLoggerWithSink('t', prod).debug('hi')
+      expect(prod.output).not.toHaveBeenCalled()
     })
   })
 
   describe('info', () => {
-    it('пишет в output всегда', () => {
+    it('output всегда + breadcrumb(level=info) в prod, без withSourceScope', () => {
       const sink = makeSink({ isProduction: true })
-      const log = createLoggerWithSink('test', sink)
-      log.info('hello', { foo: 1 })
-      expect(sink.output).toHaveBeenCalledWith('info', 'test', 'hello', [{ foo: 1 }])
-    })
-
-    it('добавляет breadcrumb (level=info) в production', () => {
-      const sink = makeSink({ isProduction: true })
-      const log = createLoggerWithSink('amo', sink)
-      log.info('synced', { count: 5 })
+      createLoggerWithSink('amo', sink).info('synced', { count: 5 })
+      expect(sink.output).toHaveBeenCalledWith('info', 'amo', 'synced', [{ count: 5 }])
       expect(sink.addBreadcrumb).toHaveBeenCalledWith({
         category: 'amo',
         message: 'synced',
         level: 'info',
         data: { args: [{ count: 5 }] },
       })
-    })
-
-    it('НЕ добавляет breadcrumb в dev', () => {
-      const sink = makeSink({ isProduction: false })
-      const log = createLoggerWithSink('amo', sink)
-      log.info('synced')
-      expect(sink.addBreadcrumb).not.toHaveBeenCalled()
+      expect(sink.withSourceScope).not.toHaveBeenCalled()
     })
   })
 
   describe('warn', () => {
-    it('пишет в output + breadcrumb (level=warning) в production', () => {
+    it('prod: output обёрнут в withSourceScope(source, extra) — даёт Issue через captureConsole', () => {
       const sink = makeSink({ isProduction: true })
-      const log = createLoggerWithSink('redis', sink)
-      log.warn('connection refused')
-      expect(sink.output).toHaveBeenCalledWith('warn', 'redis', 'connection refused', [])
-      expect(sink.addBreadcrumb).toHaveBeenCalledWith({
-        category: 'redis',
-        message: 'connection refused',
-        level: 'warning',
-        data: undefined,
-      })
+      createLoggerWithSink('redis', sink).warn('connection refused', { attempt: 2 })
+      expect(sink.withSourceScope).toHaveBeenCalledWith(
+        'redis',
+        { message: 'connection refused', args: [{ attempt: 2 }] },
+        expect.any(Function),
+      )
+      expect(sink.output).toHaveBeenCalledWith('warn', 'redis', 'connection refused', [{ attempt: 2 }])
     })
 
-    it('НЕ добавляет breadcrumb в dev', () => {
+    it('dev: только output, без withSourceScope', () => {
       const sink = makeSink({ isProduction: false })
-      const log = createLoggerWithSink('redis', sink)
-      log.warn('connection refused')
-      expect(sink.output).toHaveBeenCalledWith('warn', 'redis', 'connection refused', [])
-      expect(sink.addBreadcrumb).not.toHaveBeenCalled()
+      createLoggerWithSink('redis', sink).warn('x')
+      expect(sink.output).toHaveBeenCalledWith('warn', 'redis', 'x', [])
+      expect(sink.withSourceScope).not.toHaveBeenCalled()
     })
   })
 
   describe('error', () => {
-    it('captureException когда есть Error в args (с тегом source)', () => {
+    it('prod: output обёрнут в withSourceScope(source, extra)', () => {
       const sink = makeSink({ isProduction: true })
-      const log = createLoggerWithSink('worker', sink)
       const err = new Error('boom')
-      log.error('processing failed', err)
-      expect(sink.captureException).toHaveBeenCalledWith(err, {
-        tags: { source: 'worker' },
-        extra: { message: 'processing failed', args: [err] },
-      })
-      expect(sink.captureMessage).not.toHaveBeenCalled()
+      createLoggerWithSink('worker', sink).error('failed', err)
+      expect(sink.withSourceScope).toHaveBeenCalledWith(
+        'worker',
+        { message: 'failed', args: [err] },
+        expect.any(Function),
+      )
+      expect(sink.output).toHaveBeenCalledWith('error', 'worker', 'failed', [err])
     })
 
-    it('captureMessage (level=error) когда нет Error в args', () => {
-      const sink = makeSink({ isProduction: true })
-      const log = createLoggerWithSink('worker', sink)
-      log.error('something bad', { foo: 1 })
-      expect(sink.captureMessage).toHaveBeenCalledWith('something bad', {
-        level: 'error',
-        tags: { source: 'worker' },
-        extra: { args: [{ foo: 1 }] },
-      })
-      expect(sink.captureException).not.toHaveBeenCalled()
-    })
-
-    it('пишет в output всегда', () => {
+    it('dev: только output, без withSourceScope', () => {
       const sink = makeSink({ isProduction: false })
-      const log = createLoggerWithSink('worker', sink)
-      log.error('msg')
-      expect(sink.output).toHaveBeenCalledWith('error', 'worker', 'msg', [])
-    })
-
-    it('НЕ шлёт в Sentry в dev', () => {
-      const sink = makeSink({ isProduction: false })
-      const log = createLoggerWithSink('worker', sink)
-      log.error('msg', new Error('x'))
-      expect(sink.captureException).not.toHaveBeenCalled()
-      expect(sink.captureMessage).not.toHaveBeenCalled()
+      createLoggerWithSink('worker', sink).error('msg', new Error('x'))
+      expect(sink.output).toHaveBeenCalledWith('error', 'worker', 'msg', [new Error('x')])
+      expect(sink.withSourceScope).not.toHaveBeenCalled()
     })
   })
 })
 
 describe('createLogger cache', () => {
-  it('returns same instance for same tag', () => {
-    const a = createLogger('cache-test')
-    const b = createLogger('cache-test')
-    expect(a).toBe(b)
+  it('один инстанс на тег', () => {
+    expect(createLogger('cache-test')).toBe(createLogger('cache-test'))
   })
 })
