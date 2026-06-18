@@ -1,9 +1,15 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
+const setTagMock = vi.fn()
+const setExtrasMock = vi.fn()
+const withScopeMock = vi.fn((run: (scope: { setTag: typeof setTagMock; setExtras: typeof setExtrasMock }) => void) => {
+  run({ setTag: setTagMock, setExtras: setExtrasMock })
+})
 const captureExceptionMock = vi.fn()
 const addBreadcrumbMock = vi.fn()
 
 vi.mock('@sentry/vue', () => ({
+  withScope: withScopeMock,
   captureException: captureExceptionMock,
   addBreadcrumb: addBreadcrumbMock,
 }))
@@ -13,48 +19,29 @@ const consoleWarnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
 
 const { createLogger } = await import('../../src/runtime/utils/client-logger')
 
-describe('client createLogger', () => {
+describe('client createLogger (issues-first)', () => {
   beforeEach(() => {
-    captureExceptionMock.mockClear()
-    addBreadcrumbMock.mockClear()
-    consoleErrorSpy.mockClear()
-    consoleWarnSpy.mockClear()
+    vi.clearAllMocks()
   })
 
-  it('error() captures Error из args с тегом source', () => {
-    const log = createLogger('profile')
+  it('error: console.error внутри withScope(source), без explicit captureException', () => {
     const err = new Error('boom')
-    log.error('загрузка не удалась', err)
-    expect(captureExceptionMock).toHaveBeenCalledWith(err, { tags: { source: 'profile' } })
+    createLogger('profile').error('загрузка не удалась', err)
+    expect(withScopeMock).toHaveBeenCalled()
+    expect(setTagMock).toHaveBeenCalledWith('source', 'profile')
     expect(consoleErrorSpy).toHaveBeenCalledWith('[profile]', 'загрузка не удалась', err)
-  })
-
-  it('error() без Error в args — обёртывает message в new Error', () => {
-    const log = createLogger('checkout')
-    log.error('что-то пошло не так', { code: 500 })
-    expect(captureExceptionMock).toHaveBeenCalledOnce()
-    const [errArg, ctx] = captureExceptionMock.mock.calls[0] as [unknown, { tags: Record<string, string> }]
-    expect(errArg).toBeInstanceOf(Error)
-    expect((errArg as Error).message).toBe('что-то пошло не так')
-    expect(ctx).toEqual({ tags: { source: 'checkout' } })
-  })
-
-  it('warn() добавляет breadcrumb (level=warning), без captureException', () => {
-    const log = createLogger('search')
-    log.warn('rate limited', { retry: 3 })
-    expect(addBreadcrumbMock).toHaveBeenCalledWith({
-      category: 'search',
-      message: 'rate limited',
-      level: 'warning',
-      data: { args: [{ retry: 3 }] },
-    })
+    /* Анти-дубль: Issue заводит captureConsoleIntegration, logger явно не капчит. */
     expect(captureExceptionMock).not.toHaveBeenCalled()
+  })
+
+  it('warn: console.warn внутри withScope(source)', () => {
+    createLogger('search').warn('rate limited', { retry: 3 })
+    expect(setTagMock).toHaveBeenCalledWith('source', 'search')
     expect(consoleWarnSpy).toHaveBeenCalledWith('[search]', 'rate limited', { retry: 3 })
+    expect(captureExceptionMock).not.toHaveBeenCalled()
   })
 
   it("cache: createLogger('foo') возвращает один и тот же инстанс", () => {
-    const a = createLogger('foo')
-    const b = createLogger('foo')
-    expect(a).toBe(b)
+    expect(createLogger('foo')).toBe(createLogger('foo'))
   })
 })
