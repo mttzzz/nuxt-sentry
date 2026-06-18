@@ -31,7 +31,7 @@ export default defineNuxtPlugin(async (nuxtApp) => {
     normalizeDepth: 8,
     maxValueLength: 2e3,
     ignoreErrors: buildIgnoreErrors(extraIgnore),
-    beforeSend: (event, hint) => isNoiseEvent(event) ? null : staleChunkFilter(event, hint),
+    beforeSend: (event) => isNoiseEvent(event) ? null : staleChunkFilter(event),
     tracePropagationTargets,
     ignoreSpans: [
       { op: /^browser\.(cache|connect|DNS)$/u },

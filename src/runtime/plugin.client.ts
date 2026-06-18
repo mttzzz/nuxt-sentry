@@ -49,7 +49,7 @@ export default defineNuxtPlugin(async (nuxtApp) => {
     normalizeDepth: 8,
     maxValueLength: 2000,
     ignoreErrors: buildIgnoreErrors(extraIgnore),
-    beforeSend: (event, hint) => (isNoiseEvent(event) ? null : staleChunkFilter(event, hint)),
+    beforeSend: (event) => (isNoiseEvent(event) ? null : staleChunkFilter(event)),
     tracePropagationTargets: tracePropagationTargets as (string | RegExp)[],
     ignoreSpans: [
       { op: /^browser\.(cache|connect|DNS)$/u },
