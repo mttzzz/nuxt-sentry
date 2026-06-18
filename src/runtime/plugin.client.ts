@@ -5,25 +5,20 @@ import { defineNuxtPlugin, useRouter, useRuntimeConfig } from '#app'
 // @ts-expect-error virtual module emitted by module.ts via addTemplate + alias
 import { additionalIgnorePatterns, tracePropagationTargets } from '#nuxt-sentry/config'
 
-import { buildIgnoreErrors, isIgnoredSentryMessage } from './utils/ignore-errors'
+import { isNoiseEvent } from './utils/before-send'
+import { buildIgnoreErrors } from './utils/ignore-errors'
 import { shouldEnableClientSentry } from './utils/sentry-enabled'
 
 /*
- * Client-side Sentry init: вешает browserTracing/Vue/replay/consoleLogging.
+ * Client-side Sentry init (issues-first observability, см.
+ * docs/specs/2026-06-18-issues-first-observability-design.md): browserTracing/Vue/replay
+ * + captureConsoleIntegration (любой console.warn/error → Issue с полным контекстом),
+ * Sentry Logs выключены (enableLogs:false).
  *
- * `beforeSend` интегрируется со stale-deploy-guard'ом через peer-import
- * `@mttzzz/nuxt-stale-deploy-guard/sentry` — дропает downstream-TypeError'ы
- * после stale-chunk reload. Эти проекты ставятся вместе.
- *
- * `beforeSendLog` дополнительно фильтрует logs (Sentry v10 log API,
- * `enableLogs: true`). Без него `consoleLoggingIntegration` шлёт ВСЁ что
- * летит в console.error/warn — включая шум, который мы уже отфильтровали
- * для exceptions через `ignoreErrors`. Сценарий: Nuxt в `app:error` hook
- * сначала consola.error'ит ошибку (→ Sentry log через console-integration),
- * потом hook handler делает Sentry.captureException (→ exception, дропается
- * beforeSend stale-chunk-filter'ом). В итоге exception отфильтрован, а
- * log остаётся — для stale-chunk reload-сценария это duplicate noise.
- * Применяем тот же набор паттернов и для логов, через isIgnoredSentryMessage.
+ * `beforeSend` композитный: isNoiseEvent дропает extension/anonymous-recursion шум
+ * (под catch-all message-based ignoreErrors его не ловит), затем stale-deploy-guard
+ * (`@mttzzz/nuxt-stale-deploy-guard/sentry`) дропает downstream-TypeError'ы после
+ * stale-chunk reload. Эти проекты ставятся вместе.
  */
 export default defineNuxtPlugin(async (nuxtApp) => {
   // Динамический импорт чтобы peer (stale-deploy-guard) не превращался в hard-dep на этапе compile.
@@ -32,6 +27,7 @@ export default defineNuxtPlugin(async (nuxtApp) => {
   const config = useRuntimeConfig().public.sentry!
   const router = useRouter()
   const extraIgnore = additionalIgnorePatterns as (string | RegExp)[]
+  const staleChunkFilter = createSentryStaleChunkFilter()
 
   Sentry.init({
     app: nuxtApp.vueApp,
@@ -46,25 +42,14 @@ export default defineNuxtPlugin(async (nuxtApp) => {
     }),
     tracesSampleRate: config.tracesSampleRate,
     replaysSessionSampleRate: config.replaysSessionSampleRate,
-    replaysOnErrorSampleRate: config.replaysOnErrorSampleRate,
-    enableLogs: true,
+    replaysOnErrorSampleRate: config.replaysOnErrorSampleRate ?? 1,
+    enableLogs: false,
     sendDefaultPii: true,
     attachStacktrace: true,
     normalizeDepth: 8,
     maxValueLength: 2000,
     ignoreErrors: buildIgnoreErrors(extraIgnore),
-    beforeSend: createSentryStaleChunkFilter(),
-    beforeSendLog: (log) => {
-      /* `log.message` — ParameterizedString (строка с template-частями). При
-       * console.error("[nuxt] error caught", err) Nuxt сериализует payload в
-       * один body. Берём `.toString()` — стабильно работает и на строке,
-       * и на ParameterizedString-обёртке. */
-      const body = log.message?.toString() ?? ''
-      if (isIgnoredSentryMessage(body, extraIgnore)) {
-        return null
-      }
-      return log
-    },
+    beforeSend: (event, hint) => (isNoiseEvent(event) ? null : staleChunkFilter(event, hint)),
     tracePropagationTargets: tracePropagationTargets as (string | RegExp)[],
     ignoreSpans: [
       { op: /^browser\.(cache|connect|DNS)$/u },
@@ -85,7 +70,7 @@ export default defineNuxtPlugin(async (nuxtApp) => {
         maskAllText: false,
         networkDetailAllowUrls: [globalThis.location.origin],
       }),
-      Sentry.consoleLoggingIntegration({ levels: ['warn', 'error', 'info'] }),
+      Sentry.captureConsoleIntegration({ levels: ['warn', 'error'] }),
     ],
   })
 
