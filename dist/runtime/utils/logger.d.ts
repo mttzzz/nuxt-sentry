@@ -14,15 +14,7 @@ export interface SentryBreadcrumb {
 export interface LoggerSink {
     isProduction: boolean;
     output: (level: LogLevel, tag: string, message: string, args: unknown[]) => void;
-    captureException: (error: unknown, ctx: {
-        tags: Record<string, string>;
-        extra: Record<string, unknown>;
-    }) => void;
-    captureMessage: (message: string, ctx: {
-        level: 'error';
-        tags: Record<string, string>;
-        extra: Record<string, unknown>;
-    }) => void;
+    withSourceScope: (tag: string, extra: Record<string, unknown>, write: () => void) => void;
     addBreadcrumb: (breadcrumb: SentryBreadcrumb) => void;
 }
 export declare function createLoggerWithSink(tag: string, sink: LoggerSink): Logger;

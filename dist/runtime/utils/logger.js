@@ -14,22 +14,21 @@ export function createLoggerWithSink(tag, sink) {
       }
     },
     warn(message, ...args) {
-      sink.output("warn", tag, message, args);
       if (sink.isProduction) {
-        sink.addBreadcrumb({ category: tag, message, level: "warning", data: args.length > 0 ? { args } : void 0 });
+        sink.withSourceScope(tag, { message, args }, () => {
+          sink.output("warn", tag, message, args);
+        });
+      } else {
+        sink.output("warn", tag, message, args);
       }
     },
     error(message, ...args) {
-      sink.output("error", tag, message, args);
-      if (!sink.isProduction) {
-        return;
-      }
-      const firstError = args.find((a) => a instanceof Error);
-      const tags = { source: tag };
-      if (firstError) {
-        sink.captureException(firstError, { tags, extra: { message, args } });
+      if (sink.isProduction) {
+        sink.withSourceScope(tag, { message, args }, () => {
+          sink.output("error", tag, message, args);
+        });
       } else {
-        sink.captureMessage(message, { level: "error", tags, extra: { args } });
+        sink.output("error", tag, message, args);
       }
     }
   };
@@ -37,19 +36,15 @@ export function createLoggerWithSink(tag, sink) {
 const defaultSink = {
   isProduction: process.env.NODE_ENV === "production",
   output(level, tag, message, args) {
-    const dispatch = {
-      error: console.error,
-      warn: console.warn,
-      info: console.info,
-      debug: console.debug
-    };
+    const dispatch = { error: console.error, warn: console.warn, info: console.info, debug: console.debug };
     dispatch[level](`[${tag}]`, message, ...args);
   },
-  captureException(error, ctx) {
-    Sentry.captureException(error, ctx);
-  },
-  captureMessage(message, ctx) {
-    Sentry.captureMessage(message, ctx);
+  withSourceScope(tag, extra, write) {
+    Sentry.withScope((scope) => {
+      scope.setTag("source", tag);
+      scope.setExtras(extra);
+      write();
+    });
   },
   addBreadcrumb(breadcrumb) {
     Sentry.addBreadcrumb(breadcrumb);

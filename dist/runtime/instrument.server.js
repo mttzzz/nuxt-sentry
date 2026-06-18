@@ -1,4 +1,5 @@
 import * as Sentry from "@sentry/bun";
+import { isNoiseEvent } from "./utils/before-send.js";
 import { shouldEnableServerSentry } from "./utils/sentry-enabled.js";
 function readEnvVolatile(key) {
   return globalThis.process?.env?.[key];
@@ -15,7 +16,9 @@ Sentry.init({
     Sentry.bunServerIntegration(),
     Sentry.redisIntegration({
       cachePrefixes: [__NUXT_SENTRY_CACHE_PREFIX__]
-    })
+    }),
+    /* Issues-first: серверный console.warn/error → Issue (через createLogger или сырой). */
+    Sentry.captureConsoleIntegration({ levels: ["warn", "error"] })
   ],
   tracesSampler: ({ name }) => {
     if (name?.startsWith("queue.publish/") || name?.startsWith("queue.process/")) {
@@ -29,6 +32,8 @@ Sentry.init({
   sendDefaultPii: true,
   attachStacktrace: true,
   normalizeDepth: 8,
-  enableLogs: true,
+  enableLogs: false,
+  /* Дропаем anonymous-recursion/extension шум (под catch-all message-ignoreErrors его не ловит). */
+  beforeSend: (event) => isNoiseEvent(event) ? null : event,
   debug: false
 });

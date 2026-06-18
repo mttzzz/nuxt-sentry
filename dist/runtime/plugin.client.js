@@ -2,13 +2,15 @@ import { replayIntegration } from "@sentry/browser";
 import * as Sentry from "@sentry/vue";
 import { defineNuxtPlugin, useRouter, useRuntimeConfig } from "#app";
 import { additionalIgnorePatterns, tracePropagationTargets } from "#nuxt-sentry/config";
-import { buildIgnoreErrors, isIgnoredSentryMessage } from "./utils/ignore-errors.js";
+import { isNoiseEvent } from "./utils/before-send.js";
+import { buildIgnoreErrors } from "./utils/ignore-errors.js";
 import { shouldEnableClientSentry } from "./utils/sentry-enabled.js";
 export default defineNuxtPlugin(async (nuxtApp) => {
   const { createSentryStaleChunkFilter } = await import("@mttzzz/nuxt-stale-deploy-guard/sentry");
   const config = useRuntimeConfig().public.sentry;
   const router = useRouter();
   const extraIgnore = additionalIgnorePatterns;
+  const staleChunkFilter = createSentryStaleChunkFilter();
   Sentry.init({
     app: nuxtApp.vueApp,
     dsn: config.dsn,
@@ -22,21 +24,14 @@ export default defineNuxtPlugin(async (nuxtApp) => {
     }),
     tracesSampleRate: config.tracesSampleRate,
     replaysSessionSampleRate: config.replaysSessionSampleRate,
-    replaysOnErrorSampleRate: config.replaysOnErrorSampleRate,
-    enableLogs: true,
+    replaysOnErrorSampleRate: config.replaysOnErrorSampleRate ?? 1,
+    enableLogs: false,
     sendDefaultPii: true,
     attachStacktrace: true,
     normalizeDepth: 8,
     maxValueLength: 2e3,
     ignoreErrors: buildIgnoreErrors(extraIgnore),
-    beforeSend: createSentryStaleChunkFilter(),
-    beforeSendLog: (log) => {
-      const body = log.message?.toString() ?? "";
-      if (isIgnoredSentryMessage(body, extraIgnore)) {
-        return null;
-      }
-      return log;
-    },
+    beforeSend: (event, hint) => isNoiseEvent(event) ? null : staleChunkFilter(event, hint),
     tracePropagationTargets,
     ignoreSpans: [
       { op: /^browser\.(cache|connect|DNS)$/u },
@@ -57,7 +52,7 @@ export default defineNuxtPlugin(async (nuxtApp) => {
         maskAllText: false,
         networkDetailAllowUrls: [globalThis.location.origin]
       }),
-      Sentry.consoleLoggingIntegration({ levels: ["warn", "error", "info"] })
+      Sentry.captureConsoleIntegration({ levels: ["warn", "error"] })
     ]
   });
   nuxtApp.hook("app:error", (error) => {

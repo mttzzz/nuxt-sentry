@@ -5,21 +5,23 @@ export function createLogger(tag) {
   if (cached) {
     return cached;
   }
+  function emit(level, message, args) {
+    Sentry.withScope((scope) => {
+      scope.setTag("source", tag);
+      scope.setExtras({ message, args });
+      if (level === "error") {
+        console.error(`[${tag}]`, message, ...args);
+      } else {
+        console.warn(`[${tag}]`, message, ...args);
+      }
+    });
+  }
   const logger = {
     warn(message, ...args) {
-      console.warn(`[${tag}]`, message, ...args);
-      Sentry.addBreadcrumb({
-        category: tag,
-        message,
-        level: "warning",
-        data: args.length > 0 ? { args } : void 0
-      });
+      emit("warn", message, args);
     },
     error(message, ...args) {
-      console.error(`[${tag}]`, message, ...args);
-      const firstError = args.find((a) => a instanceof Error);
-      const err = firstError ?? new Error(message);
-      Sentry.captureException(err, { tags: { source: tag } });
+      emit("error", message, args);
     }
   };
   loggerCache.set(tag, logger);
