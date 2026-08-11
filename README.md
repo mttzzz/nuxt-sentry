@@ -121,6 +121,12 @@ sentry: {
 
 Default report: `url`, `method`, `headers` (JSON-serialized), `error.cause` (с AWS-style $metadata), `error.data` (h3 createError data → `appData`). Tag: `source: nitro-error-hook`.
 
+### Заголовки console-issue
+
+`captureConsoleIntegration` шлёт `console.warn/error` синтетическим exception'ом без `type`, и Sentry титулует такой issue именем функции верхнего `in_app`-фрейма — то есть sink'ом логгера (`output`) у всех событий одинаково. `beforeSend` (client + server) прогоняет их через `normalizeConsoleEvent`: ставит `type = console.<level>` (заголовок становится `console.warn: [tag] сообщение`) и гасит `in_app` у фреймов sink'а, чтобы culprit указывал на вызывающий код.
+
+Первый деплой после обновления разово перегруппирует существующие console-issue: старые (`output`) перестанут получать события, заведутся новые с читаемыми заголовками.
+
 ## Тесты
 
 ```sh

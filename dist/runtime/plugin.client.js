@@ -2,7 +2,7 @@ import { replayIntegration } from "@sentry/browser";
 import * as Sentry from "@sentry/vue";
 import { defineNuxtPlugin, useRouter, useRuntimeConfig } from "#app";
 import { additionalIgnorePatterns, tracePropagationTargets } from "#nuxt-sentry/config";
-import { isNoiseEvent } from "./utils/before-send.js";
+import { isNoiseEvent, normalizeConsoleEvent } from "./utils/before-send.js";
 import { buildIgnoreErrors } from "./utils/ignore-errors.js";
 import { shouldEnableClientSentry } from "./utils/sentry-enabled.js";
 export default defineNuxtPlugin(async (nuxtApp) => {
@@ -31,7 +31,7 @@ export default defineNuxtPlugin(async (nuxtApp) => {
     normalizeDepth: 8,
     maxValueLength: 2e3,
     ignoreErrors: buildIgnoreErrors(extraIgnore),
-    beforeSend: (event) => isNoiseEvent(event) ? null : staleChunkFilter(event),
+    beforeSend: (event) => isNoiseEvent(event) ? null : staleChunkFilter(normalizeConsoleEvent(event)),
     tracePropagationTargets,
     ignoreSpans: [
       { op: /^browser\.(cache|connect|DNS)$/u },

@@ -5,7 +5,7 @@ import { defineNuxtPlugin, useRouter, useRuntimeConfig } from '#app'
 // @ts-expect-error virtual module emitted by module.ts via addTemplate + alias
 import { additionalIgnorePatterns, tracePropagationTargets } from '#nuxt-sentry/config'
 
-import { isNoiseEvent } from './utils/before-send'
+import { isNoiseEvent, normalizeConsoleEvent } from './utils/before-send'
 import { buildIgnoreErrors } from './utils/ignore-errors'
 import { shouldEnableClientSentry } from './utils/sentry-enabled'
 
@@ -16,7 +16,8 @@ import { shouldEnableClientSentry } from './utils/sentry-enabled'
  * Sentry Logs выключены (enableLogs:false).
  *
  * `beforeSend` композитный: isNoiseEvent дропает extension/anonymous-recursion шум
- * (под catch-all message-based ignoreErrors его не ловит), затем stale-deploy-guard
+ * (под catch-all message-based ignoreErrors его не ловит), normalizeConsoleEvent даёт
+ * console-событиям читаемый заголовок и culprit вызывающего, затем stale-deploy-guard
  * (`@mttzzz/nuxt-stale-deploy-guard/sentry`) дропает downstream-TypeError'ы после
  * stale-chunk reload. Эти проекты ставятся вместе.
  */
@@ -49,7 +50,7 @@ export default defineNuxtPlugin(async (nuxtApp) => {
     normalizeDepth: 8,
     maxValueLength: 2000,
     ignoreErrors: buildIgnoreErrors(extraIgnore),
-    beforeSend: (event) => (isNoiseEvent(event) ? null : staleChunkFilter(event)),
+    beforeSend: (event) => (isNoiseEvent(event) ? null : staleChunkFilter(normalizeConsoleEvent(event))),
     tracePropagationTargets: tracePropagationTargets as (string | RegExp)[],
     ignoreSpans: [
       { op: /^browser\.(cache|connect|DNS)$/u },

@@ -1,6 +1,6 @@
 {
   "name": "@mttzzz/nuxt-sentry",
-  "version": "0.7.0",
+  "version": "0.7.1",
   "description": "Nuxt 4 module: shared Sentry boilerplate (Bun server init, client init, nitro error capture, tunnel, portable postgres-js instrumentation)",
   "license": "MIT",
   "repository": "github:mttzzz/nuxt-sentry",

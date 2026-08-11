@@ -1,5 +1,5 @@
 import * as Sentry from "@sentry/bun";
-import { isNoiseEvent } from "./utils/before-send.js";
+import { isNoiseEvent, normalizeConsoleEvent } from "./utils/before-send.js";
 import { shouldEnableServerSentry } from "./utils/sentry-enabled.js";
 function readEnvVolatile(key) {
   return globalThis.process?.env?.[key];
@@ -33,7 +33,8 @@ Sentry.init({
   attachStacktrace: true,
   normalizeDepth: 8,
   enableLogs: false,
-  /* Дропаем anonymous-recursion/extension шум (под catch-all message-ignoreErrors его не ловит). */
-  beforeSend: (event) => isNoiseEvent(event) ? null : event,
+  /* Дропаем anonymous-recursion/extension шум (под catch-all message-ignoreErrors его не ловит),
+     затем нормализуем console-события: читаемый заголовок + culprit на реальном вызывающем. */
+  beforeSend: (event) => isNoiseEvent(event) ? null : normalizeConsoleEvent(event),
   debug: false
 });

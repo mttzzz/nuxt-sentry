@@ -16,7 +16,7 @@
 
 import * as Sentry from '@sentry/bun'
 
-import { isNoiseEvent } from './utils/before-send'
+import { isNoiseEvent, normalizeConsoleEvent } from './utils/before-send'
 import { shouldEnableServerSentry } from './utils/sentry-enabled'
 
 /* Volatile env read через globalThis — обход Rollup constant-folding.
@@ -72,8 +72,9 @@ Sentry.init({
   normalizeDepth: 8,
   enableLogs: false,
 
-  /* Дропаем anonymous-recursion/extension шум (под catch-all message-ignoreErrors его не ловит). */
-  beforeSend: (event) => (isNoiseEvent(event) ? null : event),
+  /* Дропаем anonymous-recursion/extension шум (под catch-all message-ignoreErrors его не ловит),
+     затем нормализуем console-события: читаемый заголовок + culprit на реальном вызывающем. */
+  beforeSend: (event) => (isNoiseEvent(event) ? null : normalizeConsoleEvent(event)),
 
   debug: false,
 })
