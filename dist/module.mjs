@@ -1,9 +1,24 @@
 import { existsSync } from 'node:fs';
 import { resolve, isAbsolute } from 'node:path';
-import { defineNuxtModule, createResolver, addServerImports, addTemplate, addServerPlugin, addServerHandler, addPlugin } from '@nuxt/kit';
+import { useLogger, defineNuxtModule, createResolver, addServerImports, addTemplate, addServerPlugin, addServerHandler, addPlugin } from '@nuxt/kit';
 import { sentryVitePlugin } from '@sentry/vite-plugin';
 import { defu } from 'defu';
 import { buildTunnelIngestUrl } from '../dist/runtime/utils/tunnel-ingest-url.js';
+import { readdir, rm } from 'node:fs/promises';
+
+async function stripServerSourcemaps(rootDir) {
+  const serverDir = resolve(rootDir, ".output", "server");
+  if (!existsSync(serverDir)) {
+    return 0;
+  }
+  const entries = await readdir(serverDir, { recursive: true });
+  const maps = entries.filter((entry) => entry.endsWith(".map"));
+  await Promise.all(maps.map(async (entry) => rm(resolve(serverDir, entry), { force: true })));
+  if (maps.length > 0) {
+    useLogger("sentry").info(`\u0443\u0434\u0430\u043B\u0435\u043D\u043E \u0441\u0435\u0440\u0432\u0435\u0440\u043D\u044B\u0445 sourcemap'\u043E\u0432 \u0438\u0437 .output: ${maps.length}`);
+  }
+  return maps.length;
+}
 
 const DEFAULTS = {
   org: "pushka-biz",
@@ -224,12 +239,25 @@ Server-side files (e.g. server/utils/error-filter.ts) need \`~~/server/...\`.`
             }
           } : {},
           sourcemaps: {
-            filesToDeleteAfterUpload: [".output/**/public/**/*.map"]
+            /* Карты нужны Sentry на аплоаде, а не рантайму: под запускается без
+             * --enable-source-maps, читать их некому. Серверные раньше оставались в образе —
+             * у ai.pushka.biz это 51 MB из 178 MB слоя .output, то есть почти треть байтов,
+             * которые каждый деплой уезжают в реестр (замер 13.08: пуш слоёв 28–260 s в
+             * зависимости от настроения DOCR). Удаляем все после загрузки. */
+            filesToDeleteAfterUpload: [".output/**/*.map"]
           }
         })
       );
       nuxt.options.vite.plugins = plugins;
     }
+    nuxt.hook("nitro:init", (nitro) => {
+      if (process.env.NODE_ENV !== "production") {
+        return;
+      }
+      nitro.hooks.hook("compiled", async () => {
+        await stripServerSourcemaps(nuxt.options.rootDir);
+      });
+    });
     nuxt.hook("nitro:config", (nitroConfig) => {
       if (process.env.NODE_ENV !== "production") {
         return;
