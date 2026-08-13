@@ -343,7 +343,12 @@ export default defineNuxtModule<ModuleOptions>({
               }
             : {}),
           sourcemaps: {
-            filesToDeleteAfterUpload: ['.output/**/public/**/*.map'],
+            /* Карты нужны Sentry на аплоаде, а не рантайму: под запускается без
+             * --enable-source-maps, читать их некому. Серверные раньше оставались в образе —
+             * у ai.pushka.biz это 51 MB из 178 MB слоя .output, то есть почти треть байтов,
+             * которые каждый деплой уезжают в реестр (замер 13.08: пуш слоёв 28–260 s в
+             * зависимости от настроения DOCR). Удаляем все после загрузки. */
+            filesToDeleteAfterUpload: ['.output/**/*.map'],
           },
         }),
       )
