@@ -15,6 +15,7 @@ import { defu } from 'defu'
 
 import type { ModuleOptions, PublicRuntimeSentryConfig, ResolvedModuleOptions } from './runtime/types'
 import { buildTunnelIngestUrl } from './runtime/utils/tunnel-ingest-url'
+import { stripServerSourcemaps } from './strip-server-sourcemaps'
 
 export type { ModuleOptions } from './runtime/types'
 
@@ -354,6 +355,16 @@ export default defineNuxtModule<ModuleOptions>({
       )
       nuxt.options.vite.plugins = plugins
     }
+
+    /* Серверные карты — мёртвый груз в образе; подробности в strip-server-sourcemaps.ts. */
+    nuxt.hook('nitro:init', (nitro) => {
+      if (process.env.NODE_ENV !== 'production') {
+        return
+      }
+      nitro.hooks.hook('compiled', async () => {
+        await stripServerSourcemaps(nuxt.options.rootDir)
+      })
+    })
 
     /*
      * `nitro:config` hook — инжектит instrument.server в Nitro server entry как
