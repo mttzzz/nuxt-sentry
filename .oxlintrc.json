@@ -119,7 +119,8 @@
     "no-use-before-define": ["error", { "functions": false }],
     "oxc/no-barrel-file": "error",
     "oxc/no-const-enum": "error",
-    "no-underscore-dangle": "error"
+    // __serialized__ — ключ Sentry SDK в extra для не-Error rejection (before-send.ts).
+    "no-underscore-dangle": ["error", { "allow": ["__serialized__"] }]
   },
   "ignorePatterns": [
     "node_modules",

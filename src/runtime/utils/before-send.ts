@@ -8,16 +8,63 @@ function isNoiseFrame(filename = ''): boolean {
 }
 
 /*
+ * Promise-rejection НЕ-Error объектом SDK в стек не разворачивает: фреймов нет, объект
+ * целиком уезжает в extra.__serialized__, а заголовок — «Object captured as promise
+ * rejection with keys: …». Так приходят отказы injected-провайдера криптокошелька
+ * (Rabby/MetaMask вешают window.ethereum в main world страницы, и их unhandled rejection
+ * долетает до нашего onunhandledrejection): KP-MODMB-COM-15 `{code, message, stack}` со
+ * стеком из одних chrome-extension://, KP-MODMB-COM-14 — то же без stack.
+ */
+interface SerializedRejection {
+  code?: unknown
+  message?: unknown
+  stack?: unknown
+}
+
+/* Адреса в текстовом стеке: «at fn (url:l:c)», «at url:l:c» (V8), «fn@url:l:c» (Firefox/Safari). */
+const STACK_LOCATION = /(?:\(|@|\bat\s+)([a-z][a-z-]*:\/\/[^\s()]+)/giu
+
+function isExtensionSerializedStack(rejection: SerializedRejection): boolean {
+  if (typeof rejection.stack !== 'string') {
+    return false
+  }
+  const urls = [...rejection.stack.matchAll(STACK_LOCATION)].map((match) => match[1] ?? '')
+  return urls.length > 0 && urls.every((url) => EXTENSION_PROTOCOL.test(url))
+}
+
+/*
+ * EIP-1193 (window.ethereum) — коды ошибок injected-провайдера: 4001 user rejected,
+ * 4100 unauthorized, 4200 unsupported method, 4900 disconnected, 4901 chain disconnected.
+ * Без стека единственная сигнатура — сам код: наши приложения web3 не зовут, объект с таким
+ * кодом и текстовым message может прийти только от кошелька.
+ */
+const EIP1193_CODES: Record<number, true> = { 4001: true, 4100: true, 4200: true, 4900: true, 4901: true }
+
+function isWalletProviderRejection(rejection: SerializedRejection): boolean {
+  return (
+    typeof rejection.code === 'number' &&
+    EIP1193_CODES[rejection.code] === true &&
+    typeof rejection.message === 'string'
+  )
+}
+
+/*
  * Под catch-all (captureConsoleIntegration) message-based `ignoreErrors` НЕ ловит шум
  * с нормальным сообщением, но мусорным стеком: браузерное расширение рекурсивно патчит
  * глобал (напр. Object.getOwnPropertyDescriptor) → RangeError со стеком из одних анонимных
  * фреймов (issue KP-MODMB-COM-M). Дропаем event, если ВЕСЬ стек — не наши фреймы.
- * Event без exception/стека (обычный лог/сообщение) не трогаем.
+ * Event без стека судим по сериализованному объекту rejection (см. выше); обычный
+ * лог/сообщение без него не трогаем.
  */
 export function isNoiseEvent(event: Event): boolean {
   const frames = event.exception?.values?.flatMap((value) => value.stacktrace?.frames ?? []) ?? []
   if (frames.length === 0) {
-    return false
+    const serialized = event.extra?.__serialized__
+    if (typeof serialized !== 'object' || serialized === null) {
+      return false
+    }
+    const rejection = serialized as SerializedRejection
+    return isExtensionSerializedStack(rejection) || isWalletProviderRejection(rejection)
   }
   return frames.every((frame) => isNoiseFrame(frame.filename))
 }
