@@ -14,6 +14,31 @@ function extensionFrames(n: number) {
   }))
 }
 
+/* Реальные события KP-MODMB-COM-15/14: Rabby Wallet (chrome-extension://acmacod…) реджектит
+ * promise объектом `{code: 4900, message}` — SDK не строит стек, объект уезжает в
+ * extra.__serialized__. Первый — со строковым stack расширения, второй — без stack вовсе. */
+function walletRejection(serialized: Record<string, unknown>): Event {
+  return {
+    exception: {
+      values: [
+        {
+          type: 'UnhandledRejection',
+          value: `Object captured as promise rejection with keys: ${Object.keys(serialized).join(', ')}`,
+          mechanism: { type: 'onunhandledrejection', handled: false },
+        },
+      ],
+    },
+    extra: { __serialized__: serialized },
+  }
+}
+
+const extensionStack = [
+  'Error: The provider is disconnected from all chains.',
+  '    at o (chrome-extension://acmacodkjbdgmoleebolmdjonilkdbch/background.js:4:7336403)',
+  '    at Object.disconnected (chrome-extension://acmacodkjbdgmoleebolmdjonilkdbch/background.js:4:7337816)',
+  '    at chrome-extension://acmacodkjbdgmoleebolmdjonilkdbch/background.js:4:9508756',
+].join('\n')
+
 describe('isNoiseEvent', () => {
   it('дропает extension-рекурсию (все фреймы <anonymous>)', () => {
     const event = { exception: { values: [{ type: 'RangeError', stacktrace: { frames: extensionFrames(48) } }] } }
@@ -61,6 +86,27 @@ describe('isNoiseEvent', () => {
   it('пропускает event без стека (не трогаем)', () => {
     expect(isNoiseEvent({ message: 'plain log' })).toBe(false)
     expect(isNoiseEvent({ exception: { values: [{ type: 'Error', stacktrace: { frames: [] } }] } })).toBe(false)
+  })
+
+  it('дропает object-rejection, чей текстовый stack целиком из расширения (KP-MODMB-COM-15)', () => {
+    const event = walletRejection({ code: 1, message: 'anything', stack: extensionStack })
+    expect(isNoiseEvent(event)).toBe(true)
+  })
+
+  it('дропает EIP-1193 отказ кошелька без stack по коду (KP-MODMB-COM-14)', () => {
+    const event = walletRejection({ code: 4900, message: 'The provider is disconnected from all chains.' })
+    expect(isNoiseEvent(event)).toBe(true)
+    expect(isNoiseEvent(walletRejection({ code: 4001, message: 'User rejected the request.' }))).toBe(true)
+  })
+
+  it('пропускает object-rejection нашего кода: стек с нашим URL или не-кошельковый код', () => {
+    const ours = 'Error: boom\n    at fetchPage (https://kp.modmb.com/_nuxt/entry.js:1:2)'
+    expect(isNoiseEvent(walletRejection({ code: 500, message: 'boom', stack: ours }))).toBe(false)
+    const mixed = `${extensionStack}\n    at handler (https://kp.modmb.com/_nuxt/entry.js:1:2)`
+    expect(isNoiseEvent(walletRejection({ code: 4900, message: 'x', stack: mixed }))).toBe(true)
+    expect(isNoiseEvent(walletRejection({ code: 500, message: 'x', stack: mixed }))).toBe(false)
+    expect(isNoiseEvent(walletRejection({ code: 4900 }))).toBe(false)
+    expect(isNoiseEvent(walletRejection({ code: '4900', message: 'x' }))).toBe(false)
   })
 })
 

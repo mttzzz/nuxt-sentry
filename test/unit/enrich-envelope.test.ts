@@ -34,12 +34,12 @@ interface ParsedItem {
   payload: Buffer
 }
 function parseEnvelope(envelope: Buffer): { head: Record<string, unknown>; items: ParsedItem[] } {
-  const newlineIdx = envelope.indexOf(0x0A)
+  const newlineIdx = envelope.indexOf(0x0a)
   const head = JSON.parse(envelope.subarray(0, newlineIdx).toString('utf8')) as Record<string, unknown>
   const items: ParsedItem[] = []
   let pos = newlineIdx + 1
   while (pos < envelope.length) {
-    const headerEnd = envelope.indexOf(0x0A, pos)
+    const headerEnd = envelope.indexOf(0x0a, pos)
     if (headerEnd === -1) {
       break
     }
@@ -49,11 +49,11 @@ function parseEnvelope(envelope: Buffer): { head: Record<string, unknown>; items
     if (typeof header.length === 'number') {
       payload = envelope.subarray(pos, pos + header.length)
       pos += header.length
-      if (envelope[pos] === 0x0A) {
+      if (envelope[pos] === 0x0a) {
         pos++
       }
     } else {
-      const payloadEnd = envelope.indexOf(0x0A, pos)
+      const payloadEnd = envelope.indexOf(0x0a, pos)
       if (payloadEnd === -1) {
         payload = envelope.subarray(pos)
         pos = envelope.length
@@ -117,14 +117,14 @@ describe('enrichEnvelope', () => {
     const sessionPayload = JSON.stringify({ sid: 's-1' })
     const envelope = buildEnvelope([
       { header: { type: 'session' }, payload: sessionPayload },
-      { header: { type: 'attachment', length: 5 }, payload: Buffer.from([0x00, 0x01, 0x02, 0x03, 0xFF]) },
+      { header: { type: 'attachment', length: 5 }, payload: Buffer.from([0x00, 0x01, 0x02, 0x03, 0xff]) },
     ])
 
     const out = enrichEnvelope(envelope, { ip: '203.0.113.1', user: { id: 'u-9' } })
 
     const parsed = parseEnvelope(out)
     expect(parsed.items[0]!.payload.toString('utf8')).toBe(sessionPayload)
-    expect([...parsed.items[1]!.payload]).toEqual([0x00, 0x01, 0x02, 0x03, 0xFF])
+    expect([...parsed.items[1]!.payload]).toEqual([0x00, 0x01, 0x02, 0x03, 0xff])
   })
 
   it('корректно обновляет length для length-prefixed event-item после инжекта', () => {
@@ -155,7 +155,7 @@ describe('enrichEnvelope', () => {
 
   it('multi-item envelope: event обогащён, attachment остался byte-for-byte', () => {
     const eventPayload = JSON.stringify({ message: 'first' })
-    const binary = Buffer.from([0xDE, 0xAD, 0xBE, 0xEF, 0x00, 0x0A, 0x42])
+    const binary = Buffer.from([0xde, 0xad, 0xbe, 0xef, 0x00, 0x0a, 0x42])
     const envelope = buildEnvelope([
       { header: { type: 'event' }, payload: eventPayload },
       { header: { type: 'attachment', length: binary.length, filename: 'screenshot.bin' }, payload: binary },

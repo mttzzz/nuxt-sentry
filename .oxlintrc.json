@@ -100,6 +100,8 @@
     "unicorn/no-useless-error-capture-stack-trace": "error",
     "unicorn/prefer-node-protocol": "error",
     "unicorn/numeric-separators-style": "off",
+    // Регистр hex-цифр решает oxfmt (пишет 0x0a); правило требует 0x0A — конфликт с форматтером.
+    "unicorn/number-literal-case": "off",
 
     // ── Vue ──────────────────────────────────────────────────────────
     "vue/define-props-destructuring": "off",
@@ -117,7 +119,8 @@
     "no-use-before-define": ["error", { "functions": false }],
     "oxc/no-barrel-file": "error",
     "oxc/no-const-enum": "error",
-    "no-underscore-dangle": "error"
+    // __serialized__ — ключ Sentry SDK в extra для не-Error rejection (before-send.ts).
+    "no-underscore-dangle": ["error", { "allow": ["__serialized__"] }]
   },
   "ignorePatterns": [
     "node_modules",

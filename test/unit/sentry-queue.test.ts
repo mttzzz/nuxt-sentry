@@ -2,11 +2,11 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const startNewTraceMock = vi.fn(async (fn: () => Promise<unknown>) => fn())
 type SpanCallback = (span: { setStatus: () => void }) => Promise<unknown>
-const startSpanMock = vi.fn<[unknown, SpanCallback], Promise<unknown>>()
+const startSpanMock = vi.fn<(opts: unknown, fn: SpanCallback) => Promise<unknown>>()
 // oxlint-disable-next-line typescript/strict-void-return -- mock returns Promise where void expected; vitest mockImplementation typing limitation
 startSpanMock.mockImplementation((_opts: unknown, fn: SpanCallback) => fn({ setStatus: vi.fn() }))
 type TraceCallback = () => Promise<unknown>
-const continueTraceMock = vi.fn<[unknown, TraceCallback], Promise<unknown>>()
+const continueTraceMock = vi.fn<(ctx: unknown, fn: TraceCallback) => Promise<unknown>>()
 continueTraceMock.mockImplementation((_ctx: unknown, fn: TraceCallback) => fn())
 const captureExceptionMock = vi.fn()
 const getTraceDataMock = vi.fn(() => ({ 'sentry-trace': 'abc-123', baggage: 'sentry-x=y' }))
@@ -102,15 +102,12 @@ describe('withSentryConsumer', () => {
 
     expect(result).toBe('done')
     expect(continueTraceMock).toHaveBeenCalledOnce()
-    const continueCall = continueTraceMock.mock.calls[0] as [unknown, unknown]
-    expect(continueCall[0]).toEqual({ sentryTrace: 'abc', baggage: 'b' })
+    expect(continueTraceMock.mock.calls[0]?.[0]).toEqual({ sentryTrace: 'abc', baggage: 'b' })
     expect(startNewTraceMock).not.toHaveBeenCalled()
 
     expect(startSpanMock).toHaveBeenCalledTimes(2)
-    const outerCall = startSpanMock.mock.calls[0] as [{ name: string }, unknown]
-    const innerCall = startSpanMock.mock.calls[1] as [{ op: string; name: string }, unknown]
-    expect(outerCall[0]).toEqual({ name: 'queue.process/media' })
-    expect(innerCall[0]).toMatchObject({ op: 'queue.process', name: 'media' })
+    expect(startSpanMock.mock.calls[0]?.[0]).toEqual({ name: 'queue.process/media' })
+    expect(startSpanMock.mock.calls[1]?.[0]).toMatchObject({ op: 'queue.process', name: 'media' })
   })
 
   it('startNewTrace когда _sentryTrace отсутствует', async () => {
