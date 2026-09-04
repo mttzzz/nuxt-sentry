@@ -42,6 +42,10 @@ const NON_APP_FRAME_FUNCTIONS: Record<string, true> = {
   '?': true,
 }
 
+/* Метод логгера — нижний кадр обвязки: следующий за ним кадр — вызывающий по построению,
+ * каким бы ни было его имя. */
+const LOGGER_METHODS: Record<string, true> = { warn: true, error: true, info: true, debug: true }
+
 function demoteSinkFrames(frames: StackFrame[] | undefined): void {
   if (!frames) {
     return
@@ -59,6 +63,13 @@ function demoteSinkFrames(frames: StackFrame[] | undefined): void {
       return
     }
     frame.in_app = false
+    /* Прошли warn()/error() логгера — ниже вызывающий. Он часто анонимный
+     * (.catch((err) => logger.error(…))), и общий список имён погасил бы и его: событие
+     * оставалось бы без единого прикладного кадра, а все такие места приложения слипались бы
+     * в один issue по одинаковому стеку обвязки (ai.pushka.biz AI-PUSHKA-BIZ-5J). */
+    if (LOGGER_METHODS[frame.function ?? ''] === true) {
+      return
+    }
   }
 }
 
@@ -72,13 +83,22 @@ function demoteSinkFrames(frames: StackFrame[] | undefined): void {
  * Стек снят ВНУТРИ sink'а логгера, поэтому верхний фрейм всегда `output` (utils/logger.ts)
  * — и заголовок был одинаковым во всех проектах org'а.
  *
- * Правим две вещи: (1) exception.type = console.<level> → заголовок становится
- * `console.warn: [tag] сообщение`; (2) гасим in_app у фреймов sink'а → culprit и
+ * Правим три вещи: (1) exception.type = console.<level>; (2) снимаем mechanism.synthetic —
+ * captureMessage с syntheticException ставит его, а сервер (eventtypes/error.py, get_metadata)
+ * для synthetic-исключений НЕ кладёт type в metadata: заголовок оставался именем функции
+ * crash-location, а value не участвовал в группировке. Без флага заголовок —
+ * `console.warn: [tag] сообщение`; (3) гасим in_app у фреймов sink'а → culprit и
  * metadata.function указывают на реального вызывающего, а не на sink.
  *
- * ВНИМАНИЕ: `type` и `in_app` участвуют в группировке, поэтому деплой даёт ОДНОРАЗОВУЮ
- * перегруппировку: существующие console-issue перестанут получать события, вместо них
- * заведутся новые с читаемыми заголовками. Старые нужно просто закрыть.
+ * Стек синтетического исключения обязан доставать до вызывающего: Bun и V8 режут его на 10
+ * кадрах, а обвязка captureConsole + logger занимает 10 ровно (ai.pushka.biz, @sentry/core
+ * внешним пакетом) — все logger.error приложения приходили с одинаковым стеком из одной
+ * обвязки и слипались в один issue (AI-PUSHKA-BIZ-5J). Лимит поднимает instrument.server.ts /
+ * plugin.client.ts (Error.stackTraceLimit) ДО Sentry.init.
+ *
+ * ВНИМАНИЕ: `type`, `synthetic` и `in_app` участвуют в группировке, поэтому деплой даёт
+ * ОДНОРАЗОВУЮ перегруппировку: существующие console-issue перестанут получать события,
+ * вместо них заведутся новые с читаемыми заголовками. Старые нужно просто закрыть.
  *
  * Typed exception (в args был настоящий Error → captureException) не трогаем вообще: у него
  * есть свой `type` и честный стек без фреймов sink'а.
@@ -102,6 +122,9 @@ export function normalizeConsoleEvent<T extends Event>(event: T): T {
       continue
     }
     value.type = type
+    if (value.mechanism?.synthetic) {
+      value.mechanism.synthetic = false
+    }
     demoteSinkFrames(value.stacktrace?.frames)
   }
 

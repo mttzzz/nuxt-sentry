@@ -2,11 +2,11 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const startNewTraceMock = vi.fn(async (fn: () => Promise<unknown>) => fn())
 type SpanCallback = (span: { setStatus: () => void }) => Promise<unknown>
-const startSpanMock = vi.fn<[unknown, SpanCallback], Promise<unknown>>()
+const startSpanMock = vi.fn<(opts: unknown, fn: SpanCallback) => Promise<unknown>>()
 // oxlint-disable-next-line typescript/strict-void-return -- mock returns Promise where void expected; vitest mockImplementation typing limitation
 startSpanMock.mockImplementation((_opts: unknown, fn: SpanCallback) => fn({ setStatus: vi.fn() }))
 type TraceCallback = () => Promise<unknown>
-const continueTraceMock = vi.fn<[unknown, TraceCallback], Promise<unknown>>()
+const continueTraceMock = vi.fn<(ctx: unknown, fn: TraceCallback) => Promise<unknown>>()
 continueTraceMock.mockImplementation((_ctx: unknown, fn: TraceCallback) => fn())
 const captureExceptionMock = vi.fn()
 const getTraceDataMock = vi.fn(() => ({ 'sentry-trace': 'abc-123', baggage: 'sentry-x=y' }))

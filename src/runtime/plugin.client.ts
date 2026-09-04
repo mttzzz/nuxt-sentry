@@ -30,6 +30,11 @@ export default defineNuxtPlugin(async (nuxtApp) => {
   const extraIgnore = additionalIgnorePatterns as (string | RegExp)[]
   const staleChunkFilter = createSentryStaleChunkFilter()
 
+  /* V8 (Chrome/Edge) режет стек на 10 кадрах; обвязка captureConsole + withScope + logger —
+   * почти столько же, и вызывающий console.warn/error в issue не попадает. Firefox/Safari
+   * свойство игнорируют — присваивание безвредно. Подробнее: instrument.server.ts. */
+  Error.stackTraceLimit = 50
+
   Sentry.init({
     app: nuxtApp.vueApp,
     dsn: config.dsn,

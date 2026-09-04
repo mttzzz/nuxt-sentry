@@ -4,6 +4,7 @@ import { shouldEnableServerSentry } from "./utils/sentry-enabled.js";
 function readEnvVolatile(key) {
   return globalThis.process?.env?.[key];
 }
+Error.stackTraceLimit = 50;
 Sentry.init({
   dsn: __NUXT_SENTRY_DSN__,
   release: __NUXT_SENTRY_RELEASE__,

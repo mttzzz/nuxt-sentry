@@ -11,6 +11,7 @@ export default defineNuxtPlugin(async (nuxtApp) => {
   const router = useRouter();
   const extraIgnore = additionalIgnorePatterns;
   const staleChunkFilter = createSentryStaleChunkFilter();
+  Error.stackTraceLimit = 50;
   Sentry.init({
     app: nuxtApp.vueApp,
     dsn: config.dsn,

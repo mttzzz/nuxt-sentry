@@ -131,6 +131,54 @@ describe('normalizeConsoleEvent', () => {
     expect(frames.map((frame) => frame.in_app)).toEqual([true, true, false, false, false, false, false, false])
   })
 
+  it('снимает synthetic: заголовок и группировка берут type/value, а не функцию кадра', () => {
+    /* Вызов captureMessage(…, { syntheticException }) ставит mechanism.synthetic = true, и сервер
+     * Sentry при этом НЕ кладёт type в metadata: заголовок = функция crash-location
+     * («consoleHandler» из @sentry/core), value в группировке не участвует. Прод ai.pushka.biz
+     * 04.09 (AI-PUSHKA-BIZ-5J): три разных console.error в одном issue с таким заголовком. */
+    const value = normalizeConsoleEvent(consoleEvent('error')).exception!.values![0]!
+
+    expect(value.mechanism).toEqual({ type: 'auto.core.capture_console', handled: true, synthetic: false })
+  })
+
+  it('останавливается сразу за кадром warn/error: анонимный вызывающий остаётся прикладным', () => {
+    /* Каждый .catch((err) => logger.error(…)) — анонимный кадр прямо под error. Гасить его как
+     * sink нельзя: без него у события нет ни одного прикладного кадра, и все такие места
+     * приложения группируются в один issue по одинаковому стеку обвязки. */
+    const frames = [
+      { function: '<anonymous>', filename: 'app:///server/index.mjs', lineno: 9000, colno: 5, in_app: true },
+      { function: 'error', filename: 'app:///server/index.mjs', lineno: 5487, colno: 14, in_app: true },
+      { function: 'withSourceScope', filename: 'app:///server/index.mjs', lineno: 5501, colno: 12, in_app: true },
+      { function: 'run', filename: 'node:async_hooks', lineno: 99, colno: 29, in_app: false },
+      { function: '<anonymous>', filename: 'app:///server/index.mjs', lineno: 5504, colno: 7, in_app: true },
+      { function: 'output', filename: 'app:///server/index.mjs', lineno: 5498, colno: 14, in_app: true },
+      {
+        function: 'consoleHandler',
+        filename: 'app:///server/node_modules/@sentry/core/build/esm/integrations/captureconsole.js',
+        lineno: 33,
+        colno: 34,
+        in_app: false,
+      },
+    ]
+    const event: Event = {
+      level: 'error',
+      logger: 'console',
+      exception: {
+        values: [
+          {
+            value: '[t] boom',
+            stacktrace: { frames },
+            mechanism: { type: 'auto.core.capture_console', handled: true, synthetic: true },
+          },
+        ],
+      },
+    }
+
+    const out = normalizeConsoleEvent(event).exception!.values![0]!.stacktrace!.frames!
+
+    expect(out.map((frame) => frame.in_app)).toEqual([true, false, false, false, false, false, false])
+  })
+
   it('не трогает typed exception (путь captureException) — ни type, ни in_app', () => {
     const event: Event = {
       level: 'error',

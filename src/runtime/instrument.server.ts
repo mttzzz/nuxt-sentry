@@ -38,6 +38,13 @@ declare const __NUXT_SENTRY_IGNORED_ROUTES__: string[]
 declare const __NUXT_SENTRY_RELEASE__: string | undefined
 // oxlint-enable no-underscore-dangle
 
+/* Синтетический стек console-события (captureConsoleIntegration → new Error()) должен доставать
+ * до вызывающего logger.warn/error. Дефолт Bun/V8 — 10 кадров, а обвязка captureConsole +
+ * withSourceScope + sink занимает ровно 10, когда @sentry/core идёт внешним пакетом: у всех
+ * logger.error приложения был одинаковый стек из одной обвязки, и Sentry сливал их в один issue
+ * (ai.pushka.biz AI-PUSHKA-BIZ-5J). 50 кадров — с запасом на async_hooks и вложенные обёртки. */
+Error.stackTraceLimit = 50
+
 Sentry.init({
   dsn: __NUXT_SENTRY_DSN__,
   release: __NUXT_SENTRY_RELEASE__,

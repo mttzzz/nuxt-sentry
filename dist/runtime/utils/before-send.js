@@ -21,6 +21,7 @@ const NON_APP_FRAME_FUNCTIONS = {
   "<anonymous>": true,
   "?": true
 };
+const LOGGER_METHODS = { warn: true, error: true, info: true, debug: true };
 function demoteSinkFrames(frames) {
   if (!frames) {
     return;
@@ -34,6 +35,9 @@ function demoteSinkFrames(frames) {
       return;
     }
     frame.in_app = false;
+    if (LOGGER_METHODS[frame.function ?? ""] === true) {
+      return;
+    }
   }
 }
 export function normalizeConsoleEvent(event) {
@@ -48,6 +52,9 @@ export function normalizeConsoleEvent(event) {
       continue;
     }
     value.type = type;
+    if (value.mechanism?.synthetic) {
+      value.mechanism.synthetic = false;
+    }
     demoteSinkFrames(value.stacktrace?.frames);
   }
   return event;
