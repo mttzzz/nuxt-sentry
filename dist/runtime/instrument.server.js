@@ -1,5 +1,5 @@
 import * as Sentry from "@sentry/bun";
-import { isNoiseEvent, normalizeConsoleEvent } from "./utils/before-send.js";
+import { isNoiseEvent, normalizeConsoleEvent, normalizeMessageEvent } from "./utils/before-send.js";
 import { shouldEnableServerSentry } from "./utils/sentry-enabled.js";
 function readEnvVolatile(key) {
   return globalThis.process?.env?.[key];
@@ -35,7 +35,8 @@ Sentry.init({
   normalizeDepth: 8,
   enableLogs: false,
   /* Дропаем anonymous-recursion/extension шум (под catch-all message-ignoreErrors его не ловит),
-     затем нормализуем console-события: читаемый заголовок + culprit на реальном вызывающем. */
-  beforeSend: (event) => isNoiseEvent(event) ? null : normalizeConsoleEvent(event),
+     затем нормализуем console-события (читаемый заголовок + culprit на реальном вызывающем) и
+     прямые captureMessage (заголовок — текст сообщения, а не функция кадра). */
+  beforeSend: (event) => isNoiseEvent(event) ? null : normalizeMessageEvent(normalizeConsoleEvent(event)),
   debug: false
 });

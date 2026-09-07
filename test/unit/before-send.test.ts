@@ -1,7 +1,7 @@
 import type { Event } from '@sentry/core'
 import { describe, expect, it } from 'vitest'
 
-import { isNoiseEvent, normalizeConsoleEvent } from '../../src/runtime/utils/before-send'
+import { isNoiseEvent, normalizeConsoleEvent, normalizeMessageEvent } from '../../src/runtime/utils/before-send'
 
 /* Реальная сигнатура из KP-MODMB-COM-M: браузерное расширение рекурсивно патчит
  * Object.getOwnPropertyDescriptor → стек из одних анонимных _getOwnPropertyDescriptor. */
@@ -215,5 +215,107 @@ describe('normalizeConsoleEvent', () => {
     const event: Event = { level: 'warning', logger: 'console', message: 'plain log' }
 
     expect(normalizeConsoleEvent(event)).toEqual({ level: 'warning', logger: 'console', message: 'plain log' })
+  })
+})
+
+/* Форма core eventFromMessage под attachStacktrace: true — прод ai.pushka.biz AI-PUSHKA-BIZ-5Q:
+ * Sentry.captureMessage('Обратная связь от …', { level: 'info', fingerprint }) из announceFeedback
+ * уехал typeless synthetic-исключением, и сервер озаглавил issue «announceFeedback». */
+function messageFrames() {
+  return [
+    {
+      function: '<anonymous>',
+      filename: 'app:///server/chunks/routes/api/index.post.mjs',
+      lineno: 127,
+      colno: 3,
+      in_app: true,
+    },
+    {
+      function: 'announceFeedback',
+      filename: 'app:///server/chunks/routes/api/index.post.mjs',
+      lineno: 87,
+      colno: 12,
+      in_app: true,
+    },
+  ]
+}
+
+function messageEvent(): Event {
+  return {
+    level: 'info',
+    message: 'Обратная связь от user@example.com: светлая тема',
+    fingerprint: ['feedback-suggestion', 'nd8ku7vokx9arb7pcptjba85'],
+    exception: {
+      values: [
+        {
+          value: 'Обратная связь от user@example.com: светлая тема',
+          stacktrace: { frames: messageFrames() },
+          mechanism: { type: 'generic', handled: true, synthetic: true },
+        },
+      ],
+    },
+  }
+}
+
+describe('normalizeMessageEvent', () => {
+  it('captureMessage под attachStacktrace становится message-событием: стек уходит в threads', () => {
+    const event = normalizeMessageEvent(messageEvent())
+
+    /* Без exception relay даёт тип default: заголовок — сообщение, не функция кадра. */
+    expect(event.exception).toBeUndefined()
+    expect(event.message).toBe('Обратная связь от user@example.com: светлая тема')
+    expect(event.fingerprint).toEqual(['feedback-suggestion', 'nd8ku7vokx9arb7pcptjba85'])
+    expect(event.threads).toEqual({
+      values: [{ stacktrace: { frames: messageFrames() }, crashed: false, current: true }],
+    })
+  })
+
+  it('console-событие остаётся exception с type console.<level> независимо от порядка нормализаторов', () => {
+    const alone = normalizeMessageEvent(consoleEvent('error'))
+    expect(alone.threads).toBeUndefined()
+    expect(alone.exception!.values![0]!.mechanism).toEqual({
+      type: 'auto.core.capture_console',
+      handled: true,
+      synthetic: true,
+    })
+
+    const composed = normalizeMessageEvent(normalizeConsoleEvent(consoleEvent('error')))
+    expect(composed.threads).toBeUndefined()
+    expect(composed.exception!.values![0]!.type).toBe('console.error')
+  })
+
+  it('не трогает typed synthetic-исключение (captureException со строкой) и настоящую ошибку', () => {
+    const fromString: Event = {
+      level: 'error',
+      exception: {
+        values: [
+          {
+            type: 'Error',
+            value: 'boom',
+            stacktrace: { frames: messageFrames() },
+            mechanism: { type: 'generic', handled: true, synthetic: true },
+          },
+        ],
+      },
+    }
+    const real: Event = {
+      level: 'error',
+      message: 'контекст',
+      exception: {
+        values: [
+          {
+            type: 'TypeError',
+            value: 'x is not a function',
+            stacktrace: { frames: messageFrames() },
+            mechanism: { type: 'generic', handled: true },
+          },
+        ],
+      },
+    }
+
+    for (const event of [fromString, real]) {
+      const before = structuredClone(event)
+      expect(normalizeMessageEvent(event)).toEqual(before)
+    }
   })
 })

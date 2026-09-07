@@ -121,13 +121,15 @@ sentry: {
 
 Default report: `url`, `method`, `headers` (JSON-serialized), `error.cause` (с AWS-style $metadata), `error.data` (h3 createError data → `appData`). Tag: `source: nitro-error-hook`.
 
-### Заголовки console-issue
+### Заголовки console-issue и прямых captureMessage
 
 `captureConsoleIntegration` шлёт `console.warn/error` синтетическим exception'ом без `type` и с `mechanism.synthetic`, и Sentry титулует такой issue именем функции верхнего `in_app`-фрейма — то есть sink'ом логгера (`output`) у всех событий одинаково. `beforeSend` (client + server) прогоняет их через `normalizeConsoleEvent`: ставит `type = console.<level>`, снимает `synthetic` (иначе сервер не кладёт `type` в metadata и заголовок остаётся именем функции) — заголовок становится `console.warn: [tag] сообщение` — и гасит `in_app` у фреймов sink'а, чтобы culprit указывал на вызывающий код.
 
 Группировка — по стеку вызывающего, поэтому стек синтетического исключения обязан до него доставать: `Error.stackTraceLimit` поднят до 50 (`instrument.server.ts`, `plugin.client.ts`). С дефолтными 10 кадрами обвязка `captureConsole` + `withSourceScope` + sink съедала стек целиком, все `logger.error` приложения приходили с одинаковым «system-only» стеком и слипались в один issue (ai.pushka.biz, AI-PUSHKA-BIZ-5J: три разных сообщения в одном issue). Текст сообщения в группировке не участвует — интерполированные идентификаторы в нём безопасны.
 
 Первый деплой после обновления разово перегруппирует существующие console-issue: старые перестанут получать события, заведутся новые с читаемыми заголовками.
+
+Прямой `Sentry.captureMessage(text, { level, fingerprint, … })` под тем же `attachStacktrace: true` уезжает той же формой (typeless synthetic exception, mechanism `generic`) — и без нормализации сервер титулует issue именем функции crash-location (ai.pushka.biz AI-PUSHKA-BIZ-5Q: «announceFeedback» вместо «Обратная связь от …»). `normalizeMessageEvent` переносит стек в `threads` (как `attach_stacktrace` в sentry-python): событие становится message-событием, заголовок — первая строка сообщения, стек виден в issue, группировка — по стеку вызывающего либо по переданному `fingerprint`. Console-события и настоящие исключения не трогаются.
 
 ## Тесты
 

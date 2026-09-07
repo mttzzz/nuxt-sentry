@@ -10,6 +10,9 @@ export function isNoiseEvent(event) {
   return frames.every((frame) => isNoiseFrame(frame.filename));
 }
 const CONSOLE_MECHANISM = "auto.core.capture_console";
+function isConsoleEvent(event) {
+  return event.logger === "console" || event.exception?.values?.some((value) => value.mechanism?.type === CONSOLE_MECHANISM) === true;
+}
 const NON_APP_FRAME_FUNCTIONS = {
   output: true,
   withSourceScope: true,
@@ -41,8 +44,7 @@ function demoteSinkFrames(frames) {
   }
 }
 export function normalizeConsoleEvent(event) {
-  const isConsole = event.logger === "console" || event.exception?.values?.some((value) => value.mechanism?.type === CONSOLE_MECHANISM) === true;
-  if (!isConsole) {
+  if (!isConsoleEvent(event)) {
     return event;
   }
   const level = event.level ?? "log";
@@ -57,5 +59,20 @@ export function normalizeConsoleEvent(event) {
     }
     demoteSinkFrames(value.stacktrace?.frames);
   }
+  return event;
+}
+export function normalizeMessageEvent(event) {
+  const values = event.exception?.values;
+  if (values?.length !== 1 || isConsoleEvent(event) || event.message === void 0 && event.logentry === void 0) {
+    return event;
+  }
+  const [value] = values;
+  if (value === void 0 || value.type !== void 0 || value.mechanism?.synthetic !== true) {
+    return event;
+  }
+  if (value.stacktrace?.frames?.length) {
+    event.threads = { values: [{ stacktrace: value.stacktrace, crashed: false, current: true }] };
+  }
+  delete event.exception;
   return event;
 }

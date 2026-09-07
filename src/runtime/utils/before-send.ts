@@ -24,6 +24,14 @@ export function isNoiseEvent(event: Event): boolean {
 
 const CONSOLE_MECHANISM = 'auto.core.capture_console'
 
+/* Событие captureConsoleIntegration: logger 'console' или console-mechanism у исключения. */
+function isConsoleEvent(event: Event): boolean {
+  return (
+    event.logger === 'console' ||
+    event.exception?.values?.some((value) => value.mechanism?.type === CONSOLE_MECHANISM) === true
+  )
+}
+
 /*
  * Функции, которые никогда не бывают прикладным crash-location'ом:
  *   — sink логгера: console.* зовётся внутри output(), обёрнутого withSourceScope()
@@ -106,10 +114,7 @@ function demoteSinkFrames(frames: StackFrame[] | undefined): void {
  * Мутирует event и возвращает его же; generic — чтобы в beforeSend сохранялся ErrorEvent.
  */
 export function normalizeConsoleEvent<T extends Event>(event: T): T {
-  const isConsole =
-    event.logger === 'console' ||
-    event.exception?.values?.some((value) => value.mechanism?.type === CONSOLE_MECHANISM) === true
-  if (!isConsole) {
+  if (!isConsoleEvent(event)) {
     return event
   }
 
@@ -128,5 +133,38 @@ export function normalizeConsoleEvent<T extends Event>(event: T): T {
     demoteSinkFrames(value.stacktrace?.frames)
   }
 
+  return event
+}
+
+/*
+ * Прямой Sentry.captureMessage под attachStacktrace: true идёт тем же путём, что console-события
+ * (core eventFromMessage): текст — в event.message, стек вызова — в exception.values[0] БЕЗ type и
+ * с mechanism.synthetic (mechanism.type = generic). Сервер для synthetic-исключения не кладёт type
+ * в metadata, и заголовок issue — имя функции crash-location, а не сообщение: «announceFeedback»
+ * вместо «Обратная связь от …» (ai.pushka.biz AI-PUSHKA-BIZ-5Q). У произвольного сообщения нет
+ * типа, которым можно озаглавить exception (у console это console.<level>), поэтому стек переезжает
+ * в threads — как делает attach_stacktrace в sentry-python: событие становится message-событием
+ * (relay: нет exception → тип default, заголовок — первая строка сообщения), стек виден в issue,
+ * группировка — по стеку единственного current-потока (grouping threads:v1; synthetic и раньше
+ * исключал type/value) либо по fingerprint вызывающего.
+ *
+ * Только точная форма eventFromMessage: одно typeless synthetic-исключение при заполненном
+ * message/logentry. Console-события (normalizeConsoleEvent) и настоящие исключения не трогаем.
+ * Мутирует event и возвращает его же.
+ */
+export function normalizeMessageEvent<T extends Event>(event: T): T {
+  const values = event.exception?.values
+  if (values?.length !== 1 || isConsoleEvent(event) || (event.message === undefined && event.logentry === undefined)) {
+    return event
+  }
+  const [value] = values
+  if (value === undefined || value.type !== undefined || value.mechanism?.synthetic !== true) {
+    return event
+  }
+
+  if (value.stacktrace?.frames?.length) {
+    event.threads = { values: [{ stacktrace: value.stacktrace, crashed: false, current: true }] }
+  }
+  delete event.exception
   return event
 }
