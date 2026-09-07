@@ -20,11 +20,13 @@ import { buildSentryReport } from './sentry-report'
  *     Use case: project-specific дополнительный контекст.
  */
 
+/* Структурное подмножество nitro CapturedErrorContext (event?: H3Event): headers у IncomingMessage —
+   IncomingHttpHeaders, значения string | string[] | undefined. */
 interface NitroErrorContext {
   event?: {
     path?: string
     method?: string
-    node?: { req?: { url?: string; method?: string; headers?: Record<string, string> } }
+    node?: { req?: { url?: string; method?: string; headers?: Record<string, string | string[] | undefined> } }
   }
 }
 

@@ -25,6 +25,8 @@ export default defineEventHandler(async (event) => {
   });
   try {
     const response = await fetch(tunnelIngestUrl, {
+      /* Buffer типизирован над ArrayBufferLike, BodyInit ждёт ArrayBufferView<ArrayBuffer>;
+         Buffer из readRawBody/Buffer.concat всегда лежит на ArrayBuffer, не на SharedArrayBuffer. */
       body,
       headers: {
         "Content-Type": "application/x-sentry-envelope"

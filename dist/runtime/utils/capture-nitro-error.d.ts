@@ -6,7 +6,7 @@ interface NitroErrorContext {
             req?: {
                 url?: string;
                 method?: string;
-                headers?: Record<string, string>;
+                headers?: Record<string, string | string[] | undefined>;
             };
         };
     };

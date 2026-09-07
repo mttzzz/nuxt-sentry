@@ -70,7 +70,7 @@ describe('runSentryTaskBody', () => {
       sentry,
     })
     expect(sentry.withMonitor).toHaveBeenCalledOnce()
-    const withMonitorCall = sentry.withMonitor.mock.calls[0] as [
+    const withMonitorCall = sentry.withMonitor.mock.calls[0] as unknown as [
       string,
       unknown,
       { schedule: { type: string; value: string }; checkinMargin: number; maxRuntime: number; timezone: string },

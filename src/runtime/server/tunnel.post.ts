@@ -66,7 +66,9 @@ export default defineEventHandler(async (event) => {
   try {
     // oxlint-disable-next-line typescript/no-unsafe-argument -- tunnelIngestUrl is a build-time string from virtual module, safe as fetch URL
     const response = await fetch(tunnelIngestUrl, {
-      body,
+      /* Buffer типизирован над ArrayBufferLike, BodyInit ждёт ArrayBufferView<ArrayBuffer>;
+         Buffer из readRawBody/Buffer.concat всегда лежит на ArrayBuffer, не на SharedArrayBuffer. */
+      body: body as Uint8Array<ArrayBuffer>,
       headers: {
         'Content-Type': 'application/x-sentry-envelope',
       },

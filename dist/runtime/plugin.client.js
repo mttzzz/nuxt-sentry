@@ -1,4 +1,3 @@
-import { replayIntegration } from "@sentry/browser";
 import * as Sentry from "@sentry/vue";
 import { defineNuxtPlugin, useRouter, useRuntimeConfig } from "#app";
 import { additionalIgnorePatterns, tracePropagationTargets } from "#nuxt-sentry/config";
@@ -46,8 +45,7 @@ export default defineNuxtPlugin(async (nuxtApp) => {
     integrations: [
       Sentry.browserTracingIntegration({ router }),
       Sentry.vueIntegration({ app: nuxtApp.vueApp, attachErrorHandler: false }),
-      // oxlint-disable-next-line typescript/no-unsafe-call -- replayIntegration from @sentry/browser is safe, typed as error due to module resolution
-      replayIntegration({
+      Sentry.replayIntegration({
         blockAllMedia: false,
         maskAllInputs: false,
         maskAllText: false,
