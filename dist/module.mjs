@@ -1,37 +1,11 @@
-import { existsSync } from 'node:fs';
-import { resolve, isAbsolute } from 'node:path';
 import { useLogger, defineNuxtModule, createResolver, addServerImports, addTemplate, addServerPlugin, addServerHandler, addPlugin } from '@nuxt/kit';
 import { sentryVitePlugin } from '@sentry/vite-plugin';
 import { defu } from 'defu';
+import { existsSync } from 'node:fs';
+import { resolve, isAbsolute } from 'node:path';
 import { buildTunnelIngestUrl } from '../dist/runtime/utils/tunnel-ingest-url.js';
 import { readdir, rm } from 'node:fs/promises';
 
-async function stripServerSourcemaps(rootDir) {
-  const serverDir = resolve(rootDir, ".output", "server");
-  if (!existsSync(serverDir)) {
-    return 0;
-  }
-  const entries = await readdir(serverDir, { recursive: true });
-  const maps = entries.filter((entry) => entry.endsWith(".map"));
-  await Promise.all(maps.map(async (entry) => rm(resolve(serverDir, entry), { force: true })));
-  if (maps.length > 0) {
-    useLogger("sentry").info(`\u0443\u0434\u0430\u043B\u0435\u043D\u043E \u0441\u0435\u0440\u0432\u0435\u0440\u043D\u044B\u0445 sourcemap'\u043E\u0432 \u0438\u0437 .output: ${maps.length}`);
-  }
-  return maps.length;
-}
-
-const DEFAULTS = {
-  org: "pushka-biz",
-  tunnelEndpoint: "/api/sentry-tunnel",
-  tracesSampleRate: 0.1,
-  queueTracesSampleRate: 0.1,
-  replaysSessionSampleRate: 0.1,
-  replaysOnErrorSampleRate: 0.1,
-  tracePropagationTargets: [/^\/api\//u],
-  additionalIgnorePatterns: [],
-  ignoredRoutes: ["/api/sentry-tunnel", "/_nuxt", "/api/ws", "/api/health", "/__nuxt_error"],
-  excludeLocalhostInProd: true
-};
 function resolveSourcePath(userPath, rootDir, srcDir) {
   let absolute;
   if (userPath.startsWith("~~/")) {
@@ -73,6 +47,41 @@ function serializeBuildLiteral(value) {
   }
   return JSON.stringify(value);
 }
+function buildReplayTemplate(enabled, sessionReplayModulePath) {
+  if (enabled) {
+    return `export { loadSessionReplay } from ${JSON.stringify(sessionReplayModulePath)}
+`;
+  }
+  return "export async function loadSessionReplay() {}\n";
+}
+
+async function stripServerSourcemaps(rootDir) {
+  const serverDir = resolve(rootDir, ".output", "server");
+  if (!existsSync(serverDir)) {
+    return 0;
+  }
+  const entries = await readdir(serverDir, { recursive: true });
+  const maps = entries.filter((entry) => entry.endsWith(".map"));
+  await Promise.all(maps.map(async (entry) => rm(resolve(serverDir, entry), { force: true })));
+  if (maps.length > 0) {
+    useLogger("sentry").info(`\u0443\u0434\u0430\u043B\u0435\u043D\u043E \u0441\u0435\u0440\u0432\u0435\u0440\u043D\u044B\u0445 sourcemap'\u043E\u0432 \u0438\u0437 .output: ${maps.length}`);
+  }
+  return maps.length;
+}
+
+const DEFAULTS = {
+  org: "pushka-biz",
+  tunnelEndpoint: "/api/sentry-tunnel",
+  tracesSampleRate: 0.1,
+  queueTracesSampleRate: 0.1,
+  replay: true,
+  replaysSessionSampleRate: 0.1,
+  replaysOnErrorSampleRate: 0.1,
+  tracePropagationTargets: [/^\/api\//u],
+  additionalIgnorePatterns: [],
+  ignoredRoutes: ["/api/sentry-tunnel", "/_nuxt", "/api/ws", "/api/health", "/__nuxt_error"],
+  excludeLocalhostInProd: true
+};
 const module$1 = defineNuxtModule({
   meta: {
     name: "@mttzzz/nuxt-sentry",
@@ -124,6 +133,7 @@ const module$1 = defineNuxtModule({
       tunnelEndpoint: opts.tunnelEndpoint ?? DEFAULTS.tunnelEndpoint,
       tracesSampleRate: opts.tracesSampleRate ?? DEFAULTS.tracesSampleRate,
       queueTracesSampleRate: opts.queueTracesSampleRate ?? DEFAULTS.queueTracesSampleRate,
+      replay: opts.replay ?? DEFAULTS.replay,
       replaysSessionSampleRate: opts.replaysSessionSampleRate ?? DEFAULTS.replaysSessionSampleRate,
       replaysOnErrorSampleRate: opts.replaysOnErrorSampleRate ?? DEFAULTS.replaysOnErrorSampleRate,
       tracePropagationTargets: opts.tracePropagationTargets ?? DEFAULTS.tracePropagationTargets,
@@ -193,10 +203,16 @@ Server-side files (e.g. server/utils/error-filter.ts) need \`~~/server/...\`.`
       write: true,
       getContents: () => buildVirtualReexport(errorEnricherPath, "() => ({})")
     });
+    const replayTpl = addTemplate({
+      filename: "nuxt-sentry-replay.mjs",
+      write: true,
+      getContents: () => buildReplayTemplate(resolved.replay, resolver.resolve("./runtime/utils/session-replay"))
+    });
     nuxt.options.alias ??= {};
     nuxt.options.alias["#nuxt-sentry/config"] = buildConfigTpl.dst;
     nuxt.options.alias["#nuxt-sentry/error-filter"] = errorFilterTpl.dst;
     nuxt.options.alias["#nuxt-sentry/error-enricher"] = errorEnricherTpl.dst;
+    nuxt.options.alias["#nuxt-sentry/replay"] = replayTpl.dst;
     nuxt.options.nitro ??= {};
     nuxt.options.nitro.alias ??= {};
     nuxt.options.nitro.alias["#nuxt-sentry/config"] = buildConfigTpl.dst;

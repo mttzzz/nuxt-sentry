@@ -93,6 +93,9 @@
     // ── Unicorn ──────────────────────────────────────────────────────
     "unicorn/filename-case": "off",
     "unicorn/no-null": "off",
+    // oxfmt (Prettier-совместимый) печатает hex-литералы строчными (0x0a), правило требует
+    // прописных — конфликт неразрешим на уровне кода, форматтер главнее.
+    "unicorn/number-literal-case": "off",
     "unicorn/no-array-for-each": "error",
     "unicorn/catch-error-name": "off",
     "unicorn/empty-brace-spaces": "off",

@@ -21,6 +21,12 @@ export interface ModuleOptions {
   tracesSampleRate?: number
   /** Sample rate для custom queue.publish/queue.process транзакций. Default: 0.1. */
   queueTracesSampleRate?: number
+  /**
+   * Session Replay (peer `@sentry/replay`). `false` — интеграция не подключается и `@sentry/replay`
+   * не попадает в клиентскую сборку вовсе (ни чанка, ни prefetch); сэмплинг-опции ниже тогда не
+   * действуют. Для тарифов Sentry с малой квотой replay. Default: true.
+   */
+  replay?: boolean
   /** Default: 0.1 */
   replaysSessionSampleRate?: number
   /** Default: 0.1 */
@@ -71,6 +77,7 @@ export interface ResolvedModuleOptions {
   tunnelEndpoint: string
   tracesSampleRate: number
   queueTracesSampleRate: number
+  replay: boolean
   replaysSessionSampleRate: number
   replaysOnErrorSampleRate: number
   tracePropagationTargets: (string | RegExp)[]

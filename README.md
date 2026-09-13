@@ -8,7 +8,7 @@ Nuxt 4 module: shared Sentry boilerplate (server init, client init, Prisma span 
 - **Prisma span normalization** — санитизирует `db.query.text`, дедупит `IN (?,?,?)` → `IN (?)`, `CONCAT(...)` → `CONCAT(?)`.
 - **Nitro `error` hook → Sentry** — форвардит unhandled-ошибки из request-pipeline (`@sentry/bun` сам по себе ловит только process-level).
 - **User context** — `Sentry.setUser` из `event.context.user` (better-auth / nuxt-authorization).
-- **Client `Sentry.init`** — browser tracing, Vue, console-logging, ignore-errors (view-transition / stale-chunk / manifest-poll noise), `beforeSend` интеграция со `@mttzzz/nuxt-stale-deploy-guard/sentry`. Session Replay подключается после init динамическим импортом `@sentry/replay` — отдельный чанк с origin приложения, entry легче на ~35 КБ gz; на localhost/dev (Sentry выключен) чанк не грузится.
+- **Client `Sentry.init`** — browser tracing, Vue, console-logging, ignore-errors (view-transition / stale-chunk / manifest-poll noise), `beforeSend` интеграция со `@mttzzz/nuxt-stale-deploy-guard/sentry`. Session Replay подключается после init динамическим импортом `@sentry/replay` — отдельный чанк с origin приложения, entry легче на ~35 КБ gz; на localhost/dev (Sentry выключен) чанк не грузится. `replay: false` убирает `@sentry/replay` из сборки целиком (тарифы с малой квотой replay).
 - **Tunnel** `/api/sentry-tunnel` (с test-mode gate против полива прод-Sentry событиями из test-image'ов).
 - **Source-map upload** — `@sentry/vite-plugin` под `SENTRY_AUTH_TOKEN` в production.
 
@@ -33,6 +33,7 @@ export default defineNuxtConfig({
     // org: 'pushka-biz',                     // default
     // tunnelEndpoint: '/api/sentry-tunnel',  // default
     // tracesSampleRate: 0.5,
+    // replay: true,                          // false → @sentry/replay не попадает в сборку вовсе
     // replaysSessionSampleRate: 0.1,
     // replaysOnErrorSampleRate: 1,
     // tracePropagationTargets: [/^\/api\//],

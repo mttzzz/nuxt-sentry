@@ -1,32 +1,10 @@
 import * as Sentry from "@sentry/vue";
 import { defineNuxtPlugin, useRouter, useRuntimeConfig } from "#app";
 import { additionalIgnorePatterns, tracePropagationTargets } from "#nuxt-sentry/config";
+import { loadSessionReplay } from "#nuxt-sentry/replay";
 import { isNoiseEvent, normalizeConsoleEvent, normalizeMessageEvent } from "./utils/before-send.js";
 import { buildIgnoreErrors } from "./utils/ignore-errors.js";
 import { shouldEnableClientSentry } from "./utils/sentry-enabled.js";
-async function loadSessionReplay() {
-  const client = Sentry.getClient();
-  if (!client || client.getOptions().enabled === false) {
-    return;
-  }
-  try {
-    const { replayIntegration } = await import("@sentry/replay");
-    client.addIntegration(
-      replayIntegration({
-        blockAllMedia: false,
-        maskAllInputs: false,
-        maskAllText: false,
-        networkDetailAllowUrls: [globalThis.location.origin]
-      })
-    );
-  } catch (error) {
-    Sentry.addBreadcrumb({
-      category: "replay",
-      level: "warning",
-      message: `session replay chunk failed: ${String(error)}`
-    });
-  }
-}
 export default defineNuxtPlugin(async (nuxtApp) => {
   const { createSentryStaleChunkFilter } = await import("@mttzzz/nuxt-stale-deploy-guard/sentry");
   const config = useRuntimeConfig().public.sentry;
