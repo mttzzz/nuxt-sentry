@@ -8,7 +8,7 @@ Nuxt 4 module: shared Sentry boilerplate (server init, client init, Prisma span 
 - **Prisma span normalization** — санитизирует `db.query.text`, дедупит `IN (?,?,?)` → `IN (?)`, `CONCAT(...)` → `CONCAT(?)`.
 - **Nitro `error` hook → Sentry** — форвардит unhandled-ошибки из request-pipeline (`@sentry/bun` сам по себе ловит только process-level).
 - **User context** — `Sentry.setUser` из `event.context.user` (better-auth / nuxt-authorization).
-- **Client `Sentry.init`** — browser tracing, Vue, replay, console-logging, ignore-errors (view-transition / stale-chunk / manifest-poll noise), `beforeSend` интеграция со `@mttzzz/nuxt-stale-deploy-guard/sentry`.
+- **Client `Sentry.init`** — browser tracing, Vue, console-logging, ignore-errors (view-transition / stale-chunk / manifest-poll noise), `beforeSend` интеграция со `@mttzzz/nuxt-stale-deploy-guard/sentry`. Session Replay подключается после init динамическим импортом `@sentry/replay` — отдельный чанк с origin приложения, entry легче на ~35 КБ gz; на localhost/dev (Sentry выключен) чанк не грузится.
 - **Tunnel** `/api/sentry-tunnel` (с test-mode gate против полива прод-Sentry событиями из test-image'ов).
 - **Source-map upload** — `@sentry/vite-plugin` под `SENTRY_AUTH_TOKEN` в production.
 
@@ -16,7 +16,8 @@ Nuxt 4 module: shared Sentry boilerplate (server init, client init, Prisma span 
 
 ```sh
 bun add github:mttzzz/nuxt-sentry#main
-# peer deps уже стоят в проектах: @sentry/bun, @sentry/vue, @sentry/vite-plugin, @prisma/instrumentation
+# peer deps уже стоят в проектах: @sentry/bun, @sentry/vue, @sentry/replay, @sentry/vite-plugin, @prisma/instrumentation
+# @sentry/replay держать в той же версии, что @sentry/vue (вторая копия @sentry/core при дрейфе ломает replay молча)
 ```
 
 ## Конфиг

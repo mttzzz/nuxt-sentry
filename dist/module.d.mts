@@ -4,6 +4,9 @@ export { ModuleOptions } from '../dist/runtime/types.js';
 
 declare const _default: _nuxt_schema.NuxtModule<ModuleOptions, ModuleOptions, false>;
 
+interface ModulePublicRuntimeConfig {
+    sentry?: PublicRuntimeSentryConfig;
+}
 declare module 'nuxt/schema' {
     interface PublicRuntimeConfig {
         sentry?: PublicRuntimeSentryConfig;
@@ -11,3 +14,4 @@ declare module 'nuxt/schema' {
 }
 
 export { _default as default };
+export type { ModulePublicRuntimeConfig };

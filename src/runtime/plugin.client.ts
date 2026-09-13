@@ -10,9 +10,18 @@ import { shouldEnableClientSentry } from './utils/sentry-enabled'
 
 /*
  * Client-side Sentry init (issues-first observability, см.
- * docs/specs/2026-06-18-issues-first-observability-design.md): browserTracing/Vue/replay
+ * docs/specs/2026-06-18-issues-first-observability-design.md): browserTracing/Vue
  * + captureConsoleIntegration (любой console.warn/error → Issue с полным контекстом),
  * Sentry Logs выключены (enableLogs:false).
+ *
+ * Session Replay подключается ПОСЛЕ init динамическим импортом `@sentry/replay` (peer):
+ * без ссылки на replayIntegration в статическом коде пакет (sideEffects:false, ~35 КБ gz
+ * rrweb-рекордера) выпадает из entry tree-shaking'ом и едет отдельным чанком с origin
+ * приложения — не с CDN Sentry: внешние CDN у части пользователей BY/RU недоступны.
+ * `client.addIntegration` для пост-init интеграции зовёт afterAllSetup, а replayIntegration
+ * читает replaysSessionSampleRate/replaysOnErrorSampleRate из client.getOptions() в момент
+ * setup — сэмплирование не меняется. `@sentry/replay` держать в той же версии, что
+ * `@sentry/vue`: вторая копия @sentry/core при дрейфе ломает replay молча.
  *
  * `beforeSend` композитный: isNoiseEvent дропает extension/anonymous-recursion шум
  * (под catch-all message-based ignoreErrors его не ловит), normalizeConsoleEvent даёт
@@ -21,6 +30,33 @@ import { shouldEnableClientSentry } from './utils/sentry-enabled'
  * (`@mttzzz/nuxt-stale-deploy-guard/sentry`) дропает downstream-TypeError'ы после
  * stale-chunk reload. Эти проекты ставятся вместе.
  */
+async function loadSessionReplay(): Promise<void> {
+  const client = Sentry.getClient()
+  /* Localhost/dev (shouldEnableClientSentry → false): чанк не грузится вовсе. */
+  if (!client || client.getOptions().enabled === false) {
+    return
+  }
+  try {
+    const { replayIntegration } = await import('@sentry/replay')
+    client.addIntegration(
+      replayIntegration({
+        blockAllMedia: false,
+        maskAllInputs: false,
+        maskAllText: false,
+        networkDetailAllowUrls: [globalThis.location.origin],
+      }),
+    )
+  } catch (error) {
+    /* Сбой чанка (офлайн, окно выкатки) — breadcrumb, не console.warn: captureConsole сделал бы
+       Issue из каждого сетевого блипа. */
+    Sentry.addBreadcrumb({
+      category: 'replay',
+      level: 'warning',
+      message: `session replay chunk failed: ${String(error)}`,
+    })
+  }
+}
+
 export default defineNuxtPlugin(async (nuxtApp) => {
   // Динамический импорт чтобы peer (stale-deploy-guard) не превращался в hard-dep на этапе compile.
   const { createSentryStaleChunkFilter } = await import('@mttzzz/nuxt-stale-deploy-guard/sentry')
@@ -70,15 +106,11 @@ export default defineNuxtPlugin(async (nuxtApp) => {
     integrations: [
       Sentry.browserTracingIntegration({ router }),
       Sentry.vueIntegration({ app: nuxtApp.vueApp, attachErrorHandler: false }),
-      Sentry.replayIntegration({
-        blockAllMedia: false,
-        maskAllInputs: false,
-        maskAllText: false,
-        networkDetailAllowUrls: [globalThis.location.origin],
-      }),
       Sentry.captureConsoleIntegration({ levels: ['warn', 'error'] }),
     ],
   })
+
+  void loadSessionReplay()
 
   // Перехват Nuxt/Vue ошибок — captureException sync.
   // oxlint-disable-next-line promise/prefer-await-to-callbacks -- Nuxt hook API requires callback, not awaitable

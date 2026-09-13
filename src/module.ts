@@ -432,6 +432,15 @@ export default defineNuxtModule<ModuleOptions>({
   },
 })
 
+/* Имя и форма — контракт @nuxt/module-builder: из этого экспорта он генерирует шим
+   `declare module '@nuxt/schema' { interface PublicRuntimeConfig extends ModulePublicRuntimeConfig {} }`
+   в dist/types.d.mts. В stub-режиме (dev:prepare) шим ставится безусловно, и без экспорта
+   public.sentry в playground типизировался как `{}`. Аугментация ниже нужна самому модулю
+   (plugin.client.ts, tunnel.post.ts читают runtimeConfig.public.sentry через 'nuxt/schema'). */
+export interface ModulePublicRuntimeConfig {
+  sentry?: PublicRuntimeSentryConfig
+}
+
 declare module 'nuxt/schema' {
   interface PublicRuntimeConfig {
     sentry?: PublicRuntimeSentryConfig

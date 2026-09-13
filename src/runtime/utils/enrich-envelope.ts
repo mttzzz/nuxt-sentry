@@ -28,7 +28,7 @@ export interface EnvelopeEnrichment {
   user: AuthUserPayload
 }
 
-const LF = 0x0A
+const LF = 0x0a
 
 /* JSON.stringify эквивалент PHP JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE.
  * V8 по умолчанию НЕ экранирует слэши, и Unicode — только характеры < 0x20

@@ -38,12 +38,14 @@
 ### Task 1: `isNoiseEvent` — фильтр extension/recursion-шума
 
 **Files:**
+
 - Create: `src/runtime/utils/before-send.ts`
 - Create: `test/unit/before-send.test.ts`
 
 - [ ] **Step 1: Failing test с реальным extension-payload (KP-MODMB-COM-M)**
 
 `test/unit/before-send.test.ts`:
+
 ```ts
 import { describe, expect, it } from 'vitest'
 
@@ -119,6 +121,7 @@ Expected: FAIL — `Cannot find module '../../src/runtime/utils/before-send'`.
 - [ ] **Step 3: Реализация**
 
 `src/runtime/utils/before-send.ts`:
+
 ```ts
 import type { ErrorEvent, Event } from '@sentry/core'
 
@@ -163,12 +166,14 @@ git commit -m "feat(before-send): isNoiseEvent — дроп extension/anonymous-
 ### Task 2: Reshape server `logger.ts` (sink под captureConsole)
 
 **Files:**
+
 - Modify: `src/runtime/utils/logger.ts`
 - Modify: `test/unit/logger.test.ts`
 
 - [ ] **Step 1: Обновить тест под новый sink (warn/error → withSourceScope+output, без captureException)**
 
 Заменить `test/unit/logger.test.ts` целиком:
+
 ```ts
 import { describe, expect, it, vi } from 'vitest'
 
@@ -272,6 +277,7 @@ Expected: FAIL — `withSourceScope` не существует в sink / ста�
 - [ ] **Step 3: Реализация — reshape logger.ts**
 
 Заменить `src/runtime/utils/logger.ts`:
+
 ```ts
 import * as Sentry from '@sentry/bun'
 
@@ -390,12 +396,14 @@ git commit -m "refactor(logger): issues-first — withSourceScope + console, б�
 ### Task 3: Reshape `client-logger.ts`
 
 **Files:**
+
 - Modify: `src/runtime/utils/client-logger.ts`
 - Test: `test/unit/client-logger.test.ts` (создать, если отсутствует — см. Step 1)
 
 - [ ] **Step 1: Тест клиентского логгера**
 
 Создать/заменить `test/unit/client-logger.test.ts`:
+
 ```ts
 import { describe, expect, it, vi } from 'vitest'
 
@@ -433,6 +441,7 @@ Expected: FAIL — текущий client-logger зовёт `captureException` я
 - [ ] **Step 3: Реализация**
 
 Заменить `src/runtime/utils/client-logger.ts`:
+
 ```ts
 import * as Sentry from '@sentry/vue'
 
@@ -499,6 +508,7 @@ git commit -m "refactor(client-logger): issues-first — withScope + console, б
 ### Task 4: `plugin.client.ts` — captureConsole, Logs off, noise-filter
 
 **Files:**
+
 - Modify: `src/runtime/plugin.client.ts`
 
 - [ ] **Step 1: Применить изменения**
@@ -506,6 +516,7 @@ git commit -m "refactor(client-logger): issues-first — withScope + console, б
 В `src/runtime/plugin.client.ts`:
 
 (a) добавить импорт предиката рядом с другими util-импортами:
+
 ```ts
 import { isNoiseEvent } from './utils/before-send'
 ```
@@ -513,34 +524,45 @@ import { isNoiseEvent } from './utils/before-send'
 (b) `enableLogs: true` → `enableLogs: false`.
 
 (c) Заменить `beforeSend`-строку. Было:
+
 ```ts
     beforeSend: createSentryStaleChunkFilter(),
 ```
+
 Стало (noise-фильтр первым, потом stale-chunk):
+
 ```ts
     beforeSend: (event, hint) => (isNoiseEvent(event) ? null : staleChunkFilter(event, hint)),
 ```
+
 и выше, перед `Sentry.init`, вынести фильтр в const:
+
 ```ts
-  const staleChunkFilter = createSentryStaleChunkFilter()
+const staleChunkFilter = createSentryStaleChunkFilter()
 ```
 
 (d) Удалить весь блок опции `beforeSendLog: (log) => {...}` (Logs выключены — больше не нужен). Заодно удалить ставший неиспользуемым импорт `isIgnoredSentryMessage` (если он использовался только в beforeSendLog).
 
 (e) В массиве `integrations` заменить:
+
 ```ts
       Sentry.consoleLoggingIntegration({ levels: ['warn', 'error', 'info'] }),
 ```
+
 на:
+
 ```ts
       Sentry.captureConsoleIntegration({ levels: ['warn', 'error'] }),
 ```
 
 (f) Replay-on-error по умолчанию 1.0 (каждый Issue с видео). Заменить:
+
 ```ts
     replaysOnErrorSampleRate: config.replaysOnErrorSampleRate,
 ```
+
 на:
+
 ```ts
     replaysOnErrorSampleRate: config.replaysOnErrorSampleRate ?? 1.0,
 ```
@@ -563,6 +585,7 @@ git commit -m "feat(client): captureConsole catch-all + enableLogs:false + noise
 ### Task 5: `instrument.server.ts` — captureConsole, Logs off, noise-filter, ignoreErrors
 
 **Files:**
+
 - Modify: `src/runtime/instrument.server.ts`
 
 - [ ] **Step 1: Применить изменения**
@@ -570,6 +593,7 @@ git commit -m "feat(client): captureConsole catch-all + enableLogs:false + noise
 В `src/runtime/instrument.server.ts`:
 
 (a) импорты сверху:
+
 ```ts
 import { isNoiseEvent } from './utils/before-send'
 import { buildIgnoreErrors } from './utils/ignore-errors'
@@ -578,11 +602,13 @@ import { buildIgnoreErrors } from './utils/ignore-errors'
 (b) `enableLogs: true` → `enableLogs: false`.
 
 (c) в `integrations` добавить (после redisIntegration):
+
 ```ts
     Sentry.captureConsoleIntegration({ levels: ['warn', 'error'] }),
 ```
 
 (d) добавить в объект `Sentry.init({...})` (рядом с `sendDefaultPii`):
+
 ```ts
   ignoreErrors: buildIgnoreErrors(),
   beforeSend: (event) => (isNoiseEvent(event) ? null : event),
@@ -620,6 +646,7 @@ Expected: без ошибок (vue-tsc). Если долго/флейки — п
 ### Task 7: Build dist + version bump 0.7.0 + commit
 
 **Files:**
+
 - Modify: `package.json` (version)
 - Rebuild: `dist/**`
 
@@ -638,7 +665,8 @@ Expected: пересборка `dist/` без ошибок.
 git add -- package.json dist
 git commit -m "build: dist + bump 0.7.0 (issues-first observability)"
 ```
-*(src уже закоммичен по задачам; здесь — только package.json + dist.)*
+
+_(src уже закоммичен по задачам; здесь — только package.json + dist.)_
 
 ---
 
@@ -647,6 +675,7 @@ git commit -m "build: dist + bump 0.7.0 (issues-first observability)"
 ### Task 8: kp — bump, очистка, проверка
 
 **Files (в `~/projects/kp.modmb.com`):**
+
 - Modify: `package.json` / `bun.lock` (bump dep)
 - Modify: `nuxt.config.ts` (убрать `/_getOwnPropertyDescriptor/`)
 
@@ -656,6 +685,7 @@ git commit -m "build: dist + bump 0.7.0 (issues-first observability)"
 cd ~/projects/kp.modmb.com
 bun update @mttzzz/nuxt-sentry
 ```
+
 Проверить, что `node_modules/@mttzzz/nuxt-sentry/package.json` version = 0.7.0.
 
 - [ ] **Step 2: Убрать утренний log-only хак**
@@ -676,6 +706,7 @@ Expected: всё зелёное (host-stack для integration/e2e — подн�
 - [ ] **Step 5: Прод/preview verify (главное доказательство)**
 
 После деплоя превью/прод-сборки и реального трафика проверить в Sentry MCP:
+
 - (а) Sentry **Logs пустые** — новых log-записей нет: `search_events(dataset='logs', statsPeriod='1h')` → 0.
 - (б) `createLogger('smoke').warn('test')` и `.error('test', new Error())` → **Issue** с `tags.source=smoke`, stacktrace, replay.
 - (в) extension-RangeError больше **не** заводит Issue (noise-filter дропнул) — issue KP-MODMB-COM-M без новых событий.
@@ -695,6 +726,7 @@ bash ~/.claude/scripts/commit-files.sh "chore(sentry): bump nuxt-sentry 0.7.0 (i
 ## Self-Review
 
 **1. Покрытие спеки:**
+
 - §3.1 client init → Task 4 ✓
 - §3.2 server init → Task 5 ✓
 - §3.3 logger reshape → Task 2 (server) + Task 3 (client) ✓
