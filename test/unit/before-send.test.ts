@@ -58,6 +58,68 @@ describe('isNoiseEvent', () => {
     expect(isNoiseEvent(event)).toBe(false)
   })
 
+  /* Прод ai.pushka.biz AI-PUSHKA-BIZ-6D: Chrome iOS (WKWebView) атрибутирует ошибки своих
+   * инжектированных скриптов (перевод страницы, автозаполнение) URL самого документа.
+   * Строки 195/486 — за пределами 95-строчного SSR-HTML: это не наш inline-код. */
+  it('дропает стек, целиком приписанный URL документа (инжект браузера)', () => {
+    const page = 'https://ai.pushka.biz/media-generator'
+    const event = {
+      request: { url: `${page}?tab=video#top` },
+      exception: {
+        values: [
+          {
+            type: 'Error',
+            value: 'La',
+            stacktrace: {
+              frames: [
+                { filename: page, lineno: 486, colno: 363 },
+                { function: 'Vi', filename: page, lineno: 194, colno: 41 },
+                { filename: `${page}?tab=video`, lineno: 195, colno: 338 },
+              ],
+            },
+          },
+        ],
+      },
+    }
+    expect(isNoiseEvent(event)).toBe(true)
+  })
+
+  it('пропускает стек с кадром бандла, даже если часть кадров на URL документа', () => {
+    const page = 'https://ai.pushka.biz/media-generator'
+    const event = {
+      request: { url: page },
+      exception: {
+        values: [
+          {
+            type: 'TypeError',
+            stacktrace: {
+              frames: [
+                { filename: page, lineno: 90, colno: 1 },
+                { function: 'submit', filename: 'https://cdn-ai.pushka.biz/_nuxt/BjX1a.js', lineno: 1, colno: 900 },
+              ],
+            },
+          },
+        ],
+      },
+    }
+    expect(isNoiseEvent(event)).toBe(false)
+  })
+
+  it('пропускает кадры с URL другой страницы того же origin', () => {
+    const event = {
+      request: { url: 'https://ai.pushka.biz/chat' },
+      exception: {
+        values: [
+          {
+            type: 'Error',
+            stacktrace: { frames: [{ filename: 'https://ai.pushka.biz/media-generator', lineno: 1, colno: 1 }] },
+          },
+        ],
+      },
+    }
+    expect(isNoiseEvent(event)).toBe(false)
+  })
+
   it('пропускает event без стека (не трогаем)', () => {
     expect(isNoiseEvent({ message: 'plain log' })).toBe(false)
     expect(isNoiseEvent({ exception: { values: [{ type: 'Error', stacktrace: { frames: [] } }] } })).toBe(false)
