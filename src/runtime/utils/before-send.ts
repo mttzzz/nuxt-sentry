@@ -2,9 +2,26 @@ import type { Event, StackFrame } from '@sentry/core'
 
 const EXTENSION_PROTOCOL = /^(?:chrome|moz|safari(?:-web)?)-extension:\/\//u
 
-/* Фрейм «не наш»: анонимный (<anonymous>/пусто) или из браузерного расширения. */
-function isNoiseFrame(filename = ''): boolean {
-  return filename === '' || filename === '<anonymous>' || EXTENSION_PROTOCOL.test(filename)
+/* Хвост URL с query/hash: WebKit кладёт в filename полный URL документа вместе с query. */
+const URL_SEARCH_OR_HASH = /[?#].*$/su
+
+/*
+ * Фрейм «не наш»: анонимный (<anonymous>/пусто), из браузерного расширения или приписан
+ * URL самого документа. Последнее — инжект браузера: Chrome iOS (WKWebView) атрибутирует
+ * ошибки своих скриптов (перевод страницы, автозаполнение) адресу страницы, и стек
+ * выглядит как inline-код документа (AI-PUSHKA-BIZ-6D: строки 195/486 при 95-строчном
+ * SSR-HTML). Наш клиентский код живёт только в бандлах (/_nuxt/*.js), inline-скрипты
+ * документа отрабатывают до Sentry.init. `documentUrl` — event.request.url (URL страницы
+ * на клиенте, URL запроса на сервере — там фреймы файловые и с ним не совпадают).
+ */
+function isNoiseFrame(filename: string | undefined, documentUrl: string | undefined): boolean {
+  return (
+    filename === undefined ||
+    filename === '' ||
+    filename === '<anonymous>' ||
+    EXTENSION_PROTOCOL.test(filename) ||
+    (documentUrl !== undefined && filename.replace(URL_SEARCH_OR_HASH, '') === documentUrl)
+  )
 }
 
 /*
@@ -19,7 +36,8 @@ export function isNoiseEvent(event: Event): boolean {
   if (frames.length === 0) {
     return false
   }
-  return frames.every((frame) => isNoiseFrame(frame.filename))
+  const documentUrl = event.request?.url?.replace(URL_SEARCH_OR_HASH, '')
+  return frames.every((frame) => isNoiseFrame(frame.filename, documentUrl))
 }
 
 const CONSOLE_MECHANISM = 'auto.core.capture_console'
