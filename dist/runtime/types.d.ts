@@ -31,7 +31,10 @@ export interface ModuleOptions {
      */
     additionalIgnorePatterns?: (string | RegExp)[];
     /**
-     * Routes, которые tracesSampler выключит из транзакций (sample rate 0).
+     * Префиксы пути запроса, которые серверный tracesSampler выключит из транзакций (sample rate 0).
+     * Сравнение — `startsWith`, не граница сегмента: `/api/ws` гасит и `/api/ws/x`, и `/api/wsx`.
+     * Сверка идёт по `url.path` http.server-спана, а без него — по имени спана без ведущего
+     * HTTP-метода (`POST /api/x` → `/api/x`).
      * Default: ['/api/sentry-tunnel', '/_nuxt', '/api/ws', '/api/health', '/__nuxt_error']
      */
     ignoredRoutes?: string[];

@@ -1,6 +1,7 @@
 import * as Sentry from "@sentry/bun";
 import { isNoiseEvent, normalizeConsoleEvent, normalizeMessageEvent } from "./utils/before-send.js";
 import { shouldEnableServerSentry } from "./utils/sentry-enabled.js";
+import { createTracesSampler } from "./utils/traces-sampler.js";
 function readEnvVolatile(key) {
   return globalThis.process?.env?.[key];
 }
@@ -21,15 +22,13 @@ Sentry.init({
     /* Issues-first: серверный console.warn/error → Issue (через createLogger или сырой). */
     Sentry.captureConsoleIntegration({ levels: ["warn", "error"] })
   ],
-  tracesSampler: ({ name }) => {
-    if (name?.startsWith("queue.publish/") || name?.startsWith("queue.process/")) {
-      return __NUXT_SENTRY_QUEUE_TRACES_SAMPLE_RATE__;
-    }
-    if (name && __NUXT_SENTRY_IGNORED_ROUTES__.some((route) => name.startsWith(route))) {
-      return 0;
-    }
-    return __NUXT_SENTRY_TRACES_SAMPLE_RATE__;
-  },
+  /* Какие корневые спаны становятся транзакциями — utils/traces-sampler.ts (чистая фабрика, покрыта
+     юнитами). Плейсхолдеры остаются тут: renderChunk подставляет их только в коде этого чанка. */
+  tracesSampler: createTracesSampler({
+    tracesSampleRate: __NUXT_SENTRY_TRACES_SAMPLE_RATE__,
+    queueTracesSampleRate: __NUXT_SENTRY_QUEUE_TRACES_SAMPLE_RATE__,
+    ignoredRoutes: __NUXT_SENTRY_IGNORED_ROUTES__
+  }),
   sendDefaultPii: true,
   attachStacktrace: true,
   normalizeDepth: 8,
