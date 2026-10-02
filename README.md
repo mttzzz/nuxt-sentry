@@ -5,6 +5,7 @@ Nuxt 4 module: shared Sentry boilerplate (server init, client init, Prisma span 
 ## Что даёт
 
 - **Server `Sentry.init`** в top-level rollup chunk (`instrument.server.mjs`) — Sentry/OTEL стартуют до application code, Prisma + Redis instrumentation.
+- **Server `tracesSampler`** — решает, какие корневые спаны становятся транзакциями: корневые db/cache-спаны (Redis-команды вне запроса) и `ignoredRoutes` отрезаются, очереди идут по `queueTracesSampleRate`, остальное — по `tracesSampleRate`. Подробности — раздел «Серверный tracesSampler».
 - **Prisma span normalization** — санитизирует `db.query.text`, дедупит `IN (?,?,?)` → `IN (?)`, `CONCAT(...)` → `CONCAT(?)`.
 - **Nitro `error` hook → Sentry** — форвардит unhandled-ошибки из request-pipeline (`@sentry/bun` сам по себе ловит только process-level).
 - **User context** — `Sentry.setUser` из `event.context.user` (better-auth / nuxt-authorization).
@@ -38,7 +39,7 @@ export default defineNuxtConfig({
     // replaysOnErrorSampleRate: 1,
     // tracePropagationTargets: [/^\/api\//],
     // additionalIgnorePatterns: [],
-    // ignoredRoutes: ['/api/sentry-tunnel', '/_nuxt', '/api/ws', '/api/health', '/__nuxt_error'],
+    // ignoredRoutes: ['/api/sentry-tunnel', '/_nuxt', '/api/ws', '/api/health', '/__nuxt_error'], // префиксы пути — без транзакций
     // excludeLocalhostInProd: true,
   },
 })
@@ -98,6 +99,17 @@ import { instrumentQueueProducer, withSentryConsumer } from '@mttzzz/nuxt-sentry
 // Client logger (app/, не auto-import)
 import { createLogger } from '@mttzzz/nuxt-sentry/logger/client'
 ```
+
+## Серверный tracesSampler
+
+Sentry зовёт `tracesSampler` только для корневых спанов (без локального и удалённого родителя), дочерние наследуют решение корня. Правила (`runtime/utils/traces-sampler.ts`), первое сработавшее побеждает:
+
+1. Корень с `sentry.op` = `db` / `db.*` / `cache` / `cache.*` → `0`. Подписчик Sentry на TracingChannel `ioredis:command` (ioredis ≥ 5.11, в том числе вложенный в bull) не требует родительского спана: каждая Redis-команда вне запроса — опрос bull (`BRPOPLPUSH`/`EVALSHA` раз в 5 с на очередь), stream-консьюмеры (`XREADGROUP`) — становилась транзакцией из одного спана (ai.pushka.biz: ≈720k из ~800k транзакций в сутки). DB/cache-спаны внутри настоящего запроса или джобы не затронуты — они дочерние.
+2. Имя `queue.publish/…` / `queue.process/…` → `queueTracesSampleRate`.
+3. Путь из `ignoredRoutes` → `0`. Это **префиксы** пути (`startsWith`, не граница сегмента: `/api/ws` гасит и `/api/ws/x`, и `/api/wsx`; точное совпадение списком не выразить). Сверка — по `url.path` http.server-спана, без него — по имени спана без ведущего HTTP-метода (`POST /api/x` → `/api/x`). До 0.9.1 сверялось имя целиком (`GET /api/ws`), и ни один маршрут из `ignoredRoutes` не совпадал никогда (ai.pushka.biz: `GET /api/ws` — 4 390, `POST /api/sentry-tunnel` — 1 460 транзакций в сутки).
+4. Остальное → `tracesSampleRate`.
+
+После обновления до 0.9.1 число серверных транзакций заметно падает — это отрезан шум, а не потеря запросов.
 
 ## Error pipeline customization
 
