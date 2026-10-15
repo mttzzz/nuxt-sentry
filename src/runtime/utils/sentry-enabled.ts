@@ -15,7 +15,8 @@
  * (которая ломается о Vitest-frozen process.env.NODE_ENV).
  */
 
-const LOCAL_HOSTS = new Set<string>(['127.0.0.1', 'localhost', '::1', '0.0.0.0'])
+/* Экспортируется: ранний inline-beacon (early-beacon.ts) вшивает этот же список в свой скрипт — гейт localhost един. */
+export const LOCAL_HOSTS: ReadonlySet<string> = new Set(['127.0.0.1', 'localhost', '::1', '0.0.0.0'])
 
 export function shouldEnableServerSentry(env: {
   nodeEnv: string | undefined

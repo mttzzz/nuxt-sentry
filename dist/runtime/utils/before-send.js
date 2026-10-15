@@ -1,3 +1,4 @@
+import { isChunkReloadBlockedEvent } from "./chunk-reload-report.js";
 const EXTENSION_PROTOCOL = /^(?:chrome|moz|safari(?:-web)?)-extension:\/\//u;
 const URL_SEARCH_OR_HASH = /[?#].*$/su;
 function isNoiseFrame(filename, documentUrl) {
@@ -77,4 +78,13 @@ export function normalizeMessageEvent(event) {
   }
   delete event.exception;
   return event;
+}
+export function createClientBeforeSend(staleChunkFilter) {
+  return (event) => {
+    if (isNoiseEvent(event)) {
+      return null;
+    }
+    const normalized = normalizeMessageEvent(normalizeConsoleEvent(event));
+    return isChunkReloadBlockedEvent(normalized) ? normalized : staleChunkFilter(normalized);
+  };
 }

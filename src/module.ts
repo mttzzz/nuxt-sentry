@@ -10,8 +10,10 @@ import {
 import { sentryVitePlugin } from '@sentry/vite-plugin'
 import { defu } from 'defu'
 
+import { version } from '../package.json'
 import { buildReplayTemplate, buildVirtualReexport, resolveSourcePath, serializeBuildLiteral } from './build-helpers'
 import type { ModuleOptions, PublicRuntimeSentryConfig, ResolvedModuleOptions } from './runtime/types'
+import { EARLY_BEACON_HEAD_KEY, buildEarlyBeaconScript } from './runtime/utils/early-beacon'
 import { buildTunnelIngestUrl } from './runtime/utils/tunnel-ingest-url'
 import { stripServerSourcemaps } from './strip-server-sourcemaps'
 
@@ -254,6 +256,28 @@ export default defineNuxtModule<ModuleOptions>({
       src: resolver.resolve('./runtime/plugin.client'),
       mode: 'client',
     })
+
+    /*
+     * Ранний inline-beacon для браузеров без import maps: приложение там не стартует и клиентский
+     * Sentry.init не выполняется, поэтому о таком браузере сообщает скрипт без SDK (подробности —
+     * runtime/utils/early-beacon.ts). Позиция head — раньше bodyClose-скрипта stale-deploy-guard,
+     * который диспатчит `app:chunk-reload-blocked`. Только в production-сборке: в dev Sentry выключен,
+     * а guard экран-заглушку не ставит. DSN/tunnel/release вшиваются при сборке.
+     */
+    if (!nuxt.options.dev) {
+      nuxt.options.app.head.script ??= []
+      nuxt.options.app.head.script.push({
+        key: EARLY_BEACON_HEAD_KEY,
+        tagPosition: 'head',
+        innerHTML: buildEarlyBeaconScript({
+          dsn: resolved.dsn,
+          tunnelEndpoint: resolved.tunnelEndpoint,
+          release,
+          excludeLocalhostInProd: resolved.excludeLocalhostInProd,
+          version,
+        }),
+      })
+    }
 
     /*
      * Vite plugin для sourcemap upload в Sentry — только в production-build
