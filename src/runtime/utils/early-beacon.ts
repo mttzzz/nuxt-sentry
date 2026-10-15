@@ -7,8 +7,8 @@ import { LOCAL_HOSTS } from './sentry-enabled'
  * Зачем. Nuxt 4.1+ кладёт entry в `<script type="importmap">` под ключом `#entry`; в WebKit без import
  * maps (iOS < 16.4) импорт падает, приложение не стартует, клиентский Sentry.init не выполняется —
  * ни одно событие (ai.pushka.biz, 15.10.2026: iPhone на iOS 16.0.2, `500 Module specifier '#entry' …`)
- * не может уйти штатным путём. stale-deploy-guard ловит такой браузер inline-скриптом в bodyClose
- * (до window.stop()) и диспатчит `app:chunk-reload-blocked` с reason `unsupported-browser`. Этот скрипт
+ * не может уйти штатным путём. stale-deploy-guard (≥ 0.5.1) ловит такой браузер inline-скриптом в bodyClose,
+ * зовёт window.stop() и сразу после него диспатчит `app:chunk-reload-blocked` с reason `unsupported-browser`. Этот скрипт
  * стоит в head — раньше bodyClose-скрипта guard — слушает то же событие и сам, без SDK, отправляет
  * envelope в tunnel. Остальные reason он игнорирует: при них приложение живо, и их шлёт плагин
  * (chunk-reload-report.ts).
@@ -25,8 +25,9 @@ import { LOCAL_HOSTS } from './sentry-enabled'
  * Скрипт добавляет только то, что известно в браузере: event_id, timestamp, request (URL, User-Agent),
  * environment, release, sdk.
  *
- * Отправка — navigator.sendBeacon (по спецификации запрос не обрывается ни window.stop(), ни выгрузкой
- * страницы), фолбэк — fetch с keepalive, когда sendBeacon нет, вернул false (очередь отклонена) или бросил.
+ * Отправка — navigator.sendBeacon, фолбэк — fetch с keepalive, когда sendBeacon нет, вернул false (очередь
+ * отклонена) или бросил. Запрос начинается уже после window.stop() (порядок guard), поэтому остановка его не
+ * касается; keepalive переживает и выгрузку страницы.
  * Выключен там же, где клиентский SDK: localhost при excludeLocalhostInProd (shouldEnableClientSentry);
  * сам модуль добавляет скрипт только в production-сборке.
  */
