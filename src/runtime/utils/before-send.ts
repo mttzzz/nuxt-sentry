@@ -1,5 +1,7 @@
 import type { Event, StackFrame } from '@sentry/core'
 
+import { isChunkReloadBlockedEvent } from './chunk-reload-report'
+
 const EXTENSION_PROTOCOL = /^(?:chrome|moz|safari(?:-web)?)-extension:\/\//u
 
 /* Хвост URL с query/hash: WebKit кладёт в filename полный URL документа вместе с query. */
@@ -185,4 +187,21 @@ export function normalizeMessageEvent<T extends Event>(event: T): T {
   }
   delete event.exception
   return event
+}
+
+/*
+ * Композитный beforeSend клиентского Sentry.init: шум расширений/инжектов → нормализация console- и
+ * message-событий → stale-deploy-guard. Guard (`staleChunkFilter`) дропает событие, если в последние 5 с
+ * в breadcrumbs был console.error про stale-chunk — а отчёт «чанк не загрузился, перезагрузки не будет»
+ * (chunk-reload-report.ts) как раз следует за таким console.error. Поэтому событие с тегом chunk.reason
+ * мимо staleChunkFilter: guard сам решил, что перезагрузки не будет, и дропать тут нечего.
+ */
+export function createClientBeforeSend(staleChunkFilter: <T extends Event>(event: T) => T | null) {
+  return <T extends Event>(event: T): T | null => {
+    if (isNoiseEvent(event)) {
+      return null
+    }
+    const normalized = normalizeMessageEvent(normalizeConsoleEvent(event))
+    return isChunkReloadBlockedEvent(normalized) ? normalized : staleChunkFilter(normalized)
+  }
 }

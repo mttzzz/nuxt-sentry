@@ -3,8 +3,11 @@ import { sentryVitePlugin } from '@sentry/vite-plugin';
 import { defu } from 'defu';
 import { existsSync } from 'node:fs';
 import { resolve, isAbsolute } from 'node:path';
+import { EARLY_BEACON_HEAD_KEY, buildEarlyBeaconScript } from '../dist/runtime/utils/early-beacon.js';
 import { buildTunnelIngestUrl } from '../dist/runtime/utils/tunnel-ingest-url.js';
 import { readdir, rm } from 'node:fs/promises';
+
+const version = "0.10.0";
 
 function resolveSourcePath(userPath, rootDir, srcDir) {
   let absolute;
@@ -232,6 +235,20 @@ Server-side files (e.g. server/utils/error-filter.ts) need \`~~/server/...\`.`
       src: resolver.resolve("./runtime/plugin.client"),
       mode: "client"
     });
+    if (!nuxt.options.dev) {
+      nuxt.options.app.head.script ??= [];
+      nuxt.options.app.head.script.push({
+        key: EARLY_BEACON_HEAD_KEY,
+        tagPosition: "head",
+        innerHTML: buildEarlyBeaconScript({
+          dsn: resolved.dsn,
+          tunnelEndpoint: resolved.tunnelEndpoint,
+          release,
+          excludeLocalhostInProd: resolved.excludeLocalhostInProd,
+          version
+        })
+      });
+    }
     if (process.env.NODE_ENV === "production" && process.env.SENTRY_AUTH_TOKEN) {
       nuxt.options.vite.plugins ??= [];
       const plugins = Array.isArray(nuxt.options.vite.plugins) ? nuxt.options.vite.plugins : [nuxt.options.vite.plugins];

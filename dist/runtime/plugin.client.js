@@ -2,7 +2,8 @@ import * as Sentry from "@sentry/vue";
 import { defineNuxtPlugin, useRouter, useRuntimeConfig } from "#app";
 import { additionalIgnorePatterns, tracePropagationTargets } from "#nuxt-sentry/config";
 import { loadSessionReplay } from "#nuxt-sentry/replay";
-import { isNoiseEvent, normalizeConsoleEvent, normalizeMessageEvent } from "./utils/before-send.js";
+import { createClientBeforeSend } from "./utils/before-send.js";
+import { CHUNK_RELOAD_BLOCKED_EVENT, createChunkReloadBlockedReporter } from "./utils/chunk-reload-report.js";
 import { buildIgnoreErrors } from "./utils/ignore-errors.js";
 import { shouldEnableClientSentry } from "./utils/sentry-enabled.js";
 export default defineNuxtPlugin(async (nuxtApp) => {
@@ -32,7 +33,7 @@ export default defineNuxtPlugin(async (nuxtApp) => {
     normalizeDepth: 8,
     maxValueLength: 2e3,
     ignoreErrors: buildIgnoreErrors(extraIgnore),
-    beforeSend: (event) => isNoiseEvent(event) ? null : staleChunkFilter(normalizeMessageEvent(normalizeConsoleEvent(event))),
+    beforeSend: createClientBeforeSend(staleChunkFilter),
     tracePropagationTargets,
     ignoreSpans: [
       { op: /^browser\.(cache|connect|DNS)$/u },
@@ -50,6 +51,12 @@ export default defineNuxtPlugin(async (nuxtApp) => {
     ]
   });
   void loadSessionReplay();
+  const reportChunkReloadBlocked = createChunkReloadBlockedReporter((event) => {
+    Sentry.captureEvent(event);
+  });
+  globalThis.addEventListener(CHUNK_RELOAD_BLOCKED_EVENT, (event) => {
+    reportChunkReloadBlocked(event.detail);
+  });
   nuxtApp.hook("app:error", (error) => {
     Sentry.captureException(error);
   });

@@ -6,7 +6,8 @@ import { additionalIgnorePatterns, tracePropagationTargets } from '#nuxt-sentry/
 // @ts-expect-error virtual module: реэкспорт utils/session-replay либо no-op при `sentry.replay: false`
 import { loadSessionReplay } from '#nuxt-sentry/replay'
 
-import { isNoiseEvent, normalizeConsoleEvent, normalizeMessageEvent } from './utils/before-send'
+import { createClientBeforeSend } from './utils/before-send'
+import { CHUNK_RELOAD_BLOCKED_EVENT, createChunkReloadBlockedReporter } from './utils/chunk-reload-report'
 import { buildIgnoreErrors } from './utils/ignore-errors'
 import { shouldEnableClientSentry } from './utils/sentry-enabled'
 
@@ -28,7 +29,13 @@ import { shouldEnableClientSentry } from './utils/sentry-enabled'
  * console-событиям читаемый заголовок и culprit вызывающего, normalizeMessageEvent — прямым
  * captureMessage заголовок из текста сообщения, затем stale-deploy-guard
  * (`@mttzzz/nuxt-stale-deploy-guard/sentry`) дропает downstream-TypeError'ы после
- * stale-chunk reload. Эти проекты ставятся вместе.
+ * stale-chunk reload. Эти проекты ставятся вместе. Композицию делает createClientBeforeSend;
+ * отчёты guard'а о проглоченных сбоях чанка (тег chunk.reason) обходят этот последний фильтр.
+ *
+ * После init плагин слушает `app:chunk-reload-blocked` — событие guard'а «сбой чанка проглочен,
+ * перезагрузки не будет» — и шлёт Sentry-событие, по одному на reason (chunk-reload-report.ts).
+ * Исход `unsupported-browser` (браузер без import maps) сюда не доходит: приложение там не
+ * стартует — его шлёт ранний inline-beacon из <head> (early-beacon.ts).
  */
 
 export default defineNuxtPlugin(async (nuxtApp) => {
@@ -65,8 +72,7 @@ export default defineNuxtPlugin(async (nuxtApp) => {
     normalizeDepth: 8,
     maxValueLength: 2000,
     ignoreErrors: buildIgnoreErrors(extraIgnore),
-    beforeSend: (event) =>
-      isNoiseEvent(event) ? null : staleChunkFilter(normalizeMessageEvent(normalizeConsoleEvent(event))),
+    beforeSend: createClientBeforeSend(staleChunkFilter),
     tracePropagationTargets: tracePropagationTargets as (string | RegExp)[],
     ignoreSpans: [
       { op: /^browser\.(cache|connect|DNS)$/u },
@@ -85,6 +91,13 @@ export default defineNuxtPlugin(async (nuxtApp) => {
   })
 
   void (loadSessionReplay as () => Promise<void>)()
+
+  const reportChunkReloadBlocked = createChunkReloadBlockedReporter((event) => {
+    Sentry.captureEvent(event)
+  })
+  globalThis.addEventListener(CHUNK_RELOAD_BLOCKED_EVENT, (event) => {
+    reportChunkReloadBlocked((event as CustomEvent<unknown>).detail)
+  })
 
   // Перехват Nuxt/Vue ошибок — captureException sync.
   // oxlint-disable-next-line promise/prefer-await-to-callbacks -- Nuxt hook API requires callback, not awaitable
