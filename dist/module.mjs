@@ -7,7 +7,7 @@ import { EARLY_BEACON_HEAD_KEY, buildEarlyBeaconScript } from '../dist/runtime/u
 import { buildTunnelIngestUrl } from '../dist/runtime/utils/tunnel-ingest-url.js';
 import { readdir, rm } from 'node:fs/promises';
 
-const version = "0.10.0";
+const version = "0.10.1";
 
 function resolveSourcePath(userPath, rootDir, srcDir) {
   let absolute;

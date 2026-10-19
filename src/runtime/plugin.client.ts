@@ -23,9 +23,9 @@ import { shouldEnableClientSentry } from './utils/sentry-enabled'
  * `@sentry/replay` держать в той же версии, что `@sentry/vue`: вторая копия @sentry/core при
  * дрейфе ломает replay молча.
  *
- * `beforeSend` композитный: isNoiseEvent дропает extension/anonymous-recursion шум и
- * инжект браузера со стеком на URL документа (под catch-all message-based ignoreErrors
- * его не ловит), normalizeConsoleEvent даёт
+ * `beforeSend` композитный: isNoiseEvent дропает extension/anonymous-recursion шум и инжект
+ * браузера — стек на URL документа или на скрипте без URL, событие без кадров — по точной
+ * сигнатуре инжекта (под catch-all message-based ignoreErrors его не ловит), normalizeConsoleEvent даёт
  * console-событиям читаемый заголовок и culprit вызывающего, normalizeMessageEvent — прямым
  * captureMessage заголовок из текста сообщения, затем stale-deploy-guard
  * (`@mttzzz/nuxt-stale-deploy-guard/sentry`) дропает downstream-TypeError'ы после
