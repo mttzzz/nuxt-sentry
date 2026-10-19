@@ -1,4 +1,4 @@
-import type { Event } from '@sentry/core'
+import type { Event, StackFrame } from '@sentry/core'
 import { describe, expect, it } from 'vitest'
 
 import { isNoiseEvent, normalizeConsoleEvent, normalizeMessageEvent } from '../../src/runtime/utils/before-send'
@@ -12,6 +12,13 @@ function extensionFrames(n: number) {
     lineno: 1,
     colno: 3085,
   }))
+}
+
+/* Исключение глобального обработчика SDK со страницы Chrome iOS в той форме, в какой оно доходит до
+ * beforeSend. Без `frames` стека нет вовсе: парсер не разобрал из него ни строки. */
+function chromeIosEvent(type: string, value: string, frames?: StackFrame[]): Event {
+  const exception = frames ? { type, value, stacktrace: { frames } } : { type, value }
+  return { request: { url: 'https://ai.pushka.biz/transcribe' }, exception: { values: [exception] } }
 }
 
 describe('isNoiseEvent', () => {
@@ -118,6 +125,35 @@ describe('isNoiseEvent', () => {
       },
     }
     expect(isNoiseEvent(event)).toBe(false)
+  })
+
+  /* Прод ai.pushka.biz, Chrome iOS 147 (CriOS/147.0.7727.99): тот же инжект, что в 6D, но источник
+   * его скрипта — строка 'undefined', и такие строки стека парсер SDK отбрасывает. AI-PUSHKA-BIZ-7P:
+   * у onerror остаётся синтетический кадр из аргументов window.onerror (позиции 194:70 / 201:363 /
+   * 230:25 одни и те же на двух релизах и трёх страницах). AI-PUSHKA-BIZ-7M: reject из
+   * Promise-конструкторов инжекта — от стека остались только движковые кадры. */
+  it('дропает стек скрипта без URL: кадр "undefined" и одни [native code]', () => {
+    const syntheticOnError = { filename: 'undefined', function: '?', in_app: true, lineno: 201, colno: 363 }
+    expect(isNoiseEvent(chromeIosEvent('RangeError', 'Maximum call stack size exceeded.', [syntheticOnError]))).toBe(
+      true,
+    )
+    const nativePromise = { filename: '[native code]', function: 'Promise', in_app: true }
+    expect(isNoiseEvent(chromeIosEvent('Error', 'Ka`prod', [nativePromise, nativePromise, nativePromise]))).toBe(true)
+  })
+
+  /* AI-PUSHKA-BIZ-7N: `Error: La` — то же сообщение, что в 6D, где кадры на URL документа выдали
+   * инжект Chrome iOS. На Chrome iOS 147 кадров нет вовсе, остаётся точная сигнатура; кадр бандла
+   * по-прежнему решает в пользу «наше». */
+  it('дропает Error: La без кадров, но не похожее сообщение и не стек с кадром бандла', () => {
+    expect(isNoiseEvent(chromeIosEvent('Error', 'La'))).toBe(true)
+    expect(isNoiseEvent(chromeIosEvent('Error', 'Lazy chunk failed'))).toBe(false)
+    const bundleFrame = {
+      function: 'submit',
+      filename: 'https://cdn-ai.pushka.biz/_nuxt/BjX1a.js',
+      lineno: 1,
+      colno: 900,
+    }
+    expect(isNoiseEvent(chromeIosEvent('Error', 'La', [bundleFrame]))).toBe(false)
   })
 
   it('пропускает event без стека (не трогаем)', () => {

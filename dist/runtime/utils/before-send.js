@@ -2,12 +2,14 @@ import { isChunkReloadBlockedEvent } from "./chunk-reload-report.js";
 const EXTENSION_PROTOCOL = /^(?:chrome|moz|safari(?:-web)?)-extension:\/\//u;
 const URL_SEARCH_OR_HASH = /[?#].*$/su;
 function isNoiseFrame(filename, documentUrl) {
-  return filename === void 0 || filename === "" || filename === "<anonymous>" || EXTENSION_PROTOCOL.test(filename) || documentUrl !== void 0 && filename.replace(URL_SEARCH_OR_HASH, "") === documentUrl;
+  return filename === void 0 || filename === "" || filename === "<anonymous>" || filename === "undefined" || filename === "[native code]" || EXTENSION_PROTOCOL.test(filename) || documentUrl !== void 0 && filename.replace(URL_SEARCH_OR_HASH, "") === documentUrl;
 }
+const STACKLESS_INJECTED_ERRORS = { "Error: La": true };
 export function isNoiseEvent(event) {
-  const frames = event.exception?.values?.flatMap((value) => value.stacktrace?.frames ?? []) ?? [];
+  const values = event.exception?.values ?? [];
+  const frames = values.flatMap((value) => value.stacktrace?.frames ?? []);
   if (frames.length === 0) {
-    return false;
+    return values.length > 0 && values.every((value) => STACKLESS_INJECTED_ERRORS[`${value.type}: ${value.value}`] === true);
   }
   const documentUrl = event.request?.url?.replace(URL_SEARCH_OR_HASH, "");
   return frames.every((frame) => isNoiseFrame(frame.filename, documentUrl));

@@ -8,35 +8,54 @@ const EXTENSION_PROTOCOL = /^(?:chrome|moz|safari(?:-web)?)-extension:\/\//u
 const URL_SEARCH_OR_HASH = /[?#].*$/su
 
 /*
- * Фрейм «не наш»: анонимный (<anonymous>/пусто), из браузерного расширения или приписан
- * URL самого документа. Последнее — инжект браузера: Chrome iOS (WKWebView) атрибутирует
- * ошибки своих скриптов (перевод страницы, автозаполнение) адресу страницы, и стек
- * выглядит как inline-код документа (AI-PUSHKA-BIZ-6D: строки 195/486 при 95-строчном
- * SSR-HTML). Наш клиентский код живёт только в бандлах (/_nuxt/*.js), inline-скрипты
- * документа отрабатывают до Sentry.init. `documentUrl` — event.request.url (URL страницы
- * на клиенте, URL запроса на сервере — там фреймы файловые и с ним не совпадают).
+ * Фрейм «не наш»: анонимный (<anonymous>/пусто), из браузерного расширения, движковый или из
+ * инжекта браузера. Наш клиентский код живёт только в бандлах (/_nuxt/*.js), inline-скрипты
+ * документа отрабатывают до Sentry.init. Инжект Chrome iOS (WKWebView: перевод страницы,
+ * автозаполнение) от версии к версии выглядит по-разному:
+ *   - Chrome iOS 153 приписывает ошибки своих скриптов URL самого документа, и стек выглядит
+ *     как inline-код страницы (AI-PUSHKA-BIZ-6D: строки 195/486 при 95-строчном SSR-HTML);
+ *   - у Chrome iOS 147 источник скрипта — строка 'undefined' (её отдаёт window.onerror).
+ *     Строки `fn@undefined:201:363` стек-парсер SDK отбрасывает: от стека остаются движковые
+ *     `Promise@[native code]` (AI-PUSHKA-BIZ-7M), а onerror-событие получает синтетический
+ *     кадр с filename 'undefined' (AI-PUSHKA-BIZ-7P).
+ * `[native code]` сам по себе ничей: событие остаётся, если рядом есть кадр бандла.
+ * `documentUrl` — event.request.url (URL страницы на клиенте, URL запроса на сервере — там
+ * фреймы файловые и с ним не совпадают).
  */
 function isNoiseFrame(filename: string | undefined, documentUrl: string | undefined): boolean {
   return (
     filename === undefined ||
     filename === '' ||
     filename === '<anonymous>' ||
+    filename === 'undefined' ||
+    filename === '[native code]' ||
     EXTENSION_PROTOCOL.test(filename) ||
     (documentUrl !== undefined && filename.replace(URL_SEARCH_OR_HASH, '') === documentUrl)
   )
 }
 
 /*
+ * Исключения инжекта без единого кадра: стек целиком из скрипта без URL, парсеру SDK в нём
+ * зацепиться не за что, и судить по стеку нельзя — остаётся точная сигнатура `type: value`.
+ * `Error: La` — тот же инжект Chrome iOS, что в AI-PUSHKA-BIZ-6D, где кадры на URL документа
+ * его и выдали; без кадров — AI-PUSHKA-BIZ-7N (Chrome iOS 147).
+ */
+const STACKLESS_INJECTED_ERRORS: Record<string, true> = { 'Error: La': true }
+
+/*
  * Под catch-all (captureConsoleIntegration) message-based `ignoreErrors` НЕ ловит шум
  * с нормальным сообщением, но мусорным стеком: браузерное расширение рекурсивно патчит
  * глобал (напр. Object.getOwnPropertyDescriptor) → RangeError со стеком из одних анонимных
  * фреймов (issue KP-MODMB-COM-M). Дропаем event, если ВЕСЬ стек — не наши фреймы.
- * Event без exception/стека (обычный лог/сообщение) не трогаем.
+ * Исключение без кадров — только по точной сигнатуре инжекта; обычный лог/сообщение не трогаем.
  */
 export function isNoiseEvent(event: Event): boolean {
-  const frames = event.exception?.values?.flatMap((value) => value.stacktrace?.frames ?? []) ?? []
+  const values = event.exception?.values ?? []
+  const frames = values.flatMap((value) => value.stacktrace?.frames ?? [])
   if (frames.length === 0) {
-    return false
+    return (
+      values.length > 0 && values.every((value) => STACKLESS_INJECTED_ERRORS[`${value.type}: ${value.value}`] === true)
+    )
   }
   const documentUrl = event.request?.url?.replace(URL_SEARCH_OR_HASH, '')
   return frames.every((frame) => isNoiseFrame(frame.filename, documentUrl))
