@@ -258,11 +258,13 @@ export default defineNuxtModule<ModuleOptions>({
     })
 
     /*
-     * Ранний inline-beacon для браузеров без import maps: приложение там не стартует и клиентский
-     * Sentry.init не выполняется, поэтому о таком браузере сообщает скрипт без SDK (подробности —
-     * runtime/utils/early-beacon.ts). Позиция head — раньше bodyClose-скрипта stale-deploy-guard,
-     * который диспатчит `app:chunk-reload-blocked`. Только в production-сборке: в dev Sentry выключен,
-     * а guard экран-заглушку не ставит. DSN/tunnel/release вшиваются при сборке.
+     * Ранний inline-beacon: без SDK шлёт два исхода `app:chunk-reload-blocked` — браузер без import maps
+     * (приложение не стартует, клиентский Sentry.init не выполняется) и `retry-failed` (страница не
+     * загрузилась и после перезагрузки: Nuxt стартует первую навигацию раньше клиентского плагина, SDK к
+     * этому событию может быть не поднят). Подробности — runtime/utils/early-beacon.ts. Позиция head —
+     * раньше bodyClose-скрипта stale-deploy-guard, который диспатчит `app:chunk-reload-blocked`. Только в
+     * production-сборке: в dev Sentry выключен, а guard экран-заглушку не ставит. DSN/tunnel/release
+     * вшиваются при сборке.
      */
     if (!nuxt.options.dev) {
       nuxt.options.app.head.script ??= []

@@ -40,6 +40,7 @@ const DETAILS: Record<ChunkReloadBlockedReason, ChunkReloadBlockedDetail> = {
   },
   cooldown: { reason: 'cooldown', error: makeError(CHUNK_MESSAGE), buildId: 'b-3' },
   'no-build-id': { reason: 'no-build-id', error: makeError(CHUNK_MESSAGE) },
+  'retry-failed': { reason: 'retry-failed', kind: 'chunk', error: makeError(CHUNK_MESSAGE) },
 }
 
 const REASONS = Object.keys(DETAILS) as ChunkReloadBlockedReason[]
@@ -387,7 +388,7 @@ describe('прохождение через Sentry-клиент', () => {
     expect(delivered).toHaveLength(1)
     expect(delivered[0]).toMatchObject({
       message: toChunkReloadBlockedEvent(DETAILS[reason]).message,
-      fingerprint: ['chunk-reload-blocked', reason],
+      fingerprint: toChunkReloadBlockedEvent(DETAILS[reason]).fingerprint,
       tags: { 'chunk.reason': reason },
     })
   })

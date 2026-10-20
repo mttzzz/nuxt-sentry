@@ -12,6 +12,14 @@ import type { Event } from '@sentry/core'
  * HEAD-пробы, build-id совпал — ничего. Юзер на ошибке, в Sentry ноль. Теперь каждый такой исход —
  * одно событие на reason за загрузку страницы.
  *
+ * Отдельный исход `retry-failed` (guard ≥ 0.6.0) — сбой загрузки страницы ДО app:mounted. Тут guard
+ * не сверяет build-id: он один раз сам перезагружает страницу (маркер `sdg-retry` в URL), а если сбой
+ * повторился, показывает экран «Страница не загрузилась» и диспатчит это событие. `kind` — что не
+ * загрузилось: `chunk` (чанк страницы, динамический импорт) или `entry` (`<script type="module">`
+ * точки входа). Шлёт его ТОЛЬКО ранний beacon (early-beacon.ts): он работает и до инициализации SDK,
+ * а второй отправитель при поднятом SDK дал бы дубль — поэтому reporter SDK-пути `retry-failed`
+ * игнорирует. Fingerprint у него по причине и kind: сбой entry и сбой чанка — разные issue.
+ *
  * Исходная ошибка уходит НЕ как exception/cause: её текст совпадает с STALE_CHUNK_PATTERNS, и
  * ignoreErrors срежет отчёт тем же способом, что обнулил репорты в инциденте. Она лежит только в
  * contexts.chunk.error и в теге chunk.error. Тег chunk.reason — ещё и маркер для beforeSend: событие
@@ -60,12 +68,26 @@ export interface NoBuildIdDetail {
   error?: unknown
 }
 
+/* Что не загрузилось при `retry-failed`: чанк страницы или entry. */
+export const RETRY_FAILED_KINDS = ['chunk', 'entry'] as const
+
+export type RetryFailedKind = (typeof RETRY_FAILED_KINDS)[number]
+
+export interface RetryFailedDetail {
+  reason: 'retry-failed'
+  kind: RetryFailedKind
+  error?: unknown
+  /* Адрес скрипта, который не загрузился (для kind `entry`), если guard его знает. */
+  url?: string
+}
+
 export type ChunkReloadBlockedDetail =
   | UnsupportedBrowserDetail
   | NotStaleDetail
   | CircuitBreakerDetail
   | CooldownDetail
   | NoBuildIdDetail
+  | RetryFailedDetail
 
 export type ChunkReloadBlockedReason = ChunkReloadBlockedDetail['reason']
 
@@ -76,6 +98,7 @@ const TITLES: Record<ChunkReloadBlockedReason, string> = {
   'circuit-breaker': 'Чанк не загрузился, перезагрузки исчерпаны',
   cooldown: 'Чанк не загрузился сразу после перезагрузки',
   'no-build-id': 'Чанк не загрузился, build-id неизвестен',
+  'retry-failed': 'Страница не загрузилась и после перезагрузки',
 }
 
 const REASONS: readonly string[] = Object.keys(TITLES)
@@ -92,6 +115,7 @@ interface DetailFields {
   attempts?: unknown
   windowMs?: unknown
   missing?: unknown
+  url?: unknown
 }
 
 interface ChunkErrorSummary {
@@ -101,13 +125,17 @@ interface ChunkErrorSummary {
 }
 
 export function isChunkReloadBlockedDetail(value: unknown): value is ChunkReloadBlockedDetail {
-  return (
-    typeof value === 'object' &&
-    value !== null &&
-    'reason' in value &&
-    typeof value.reason === 'string' &&
-    REASONS.includes(value.reason)
-  )
+  if (
+    typeof value !== 'object' ||
+    value === null ||
+    !('reason' in value) ||
+    typeof value.reason !== 'string' ||
+    !REASONS.includes(value.reason)
+  ) {
+    return false
+  }
+  /* У retry-failed kind обязателен: без него нечем отличить сбой entry от сбоя чанка (fingerprint, тег). */
+  return value.reason !== 'retry-failed' || ('kind' in value && RETRY_FAILED_KINDS.some((kind) => kind === value.kind))
 }
 
 /* Обрезка без половины суррогатной пары: одинокий суррогат делает JSON-строку невалидной для разбора на сервере. */
@@ -170,12 +198,19 @@ function summarizeError(error: unknown): ChunkErrorSummary | undefined {
  * Sentry-событие по detail: одинаково для SDK-пути (Sentry.captureEvent в plugin.client.ts) и для
  * раннего beacon (шаблон события вшивается в его скрипт при сборке). level: warning для
  * unsupported-browser (проблема браузера, а не приложения), error для остальных; fingerprint —
- * одна issue на причину.
+ * одна issue на причину (у retry-failed — на причину и kind).
  */
 export function toChunkReloadBlockedEvent(detail: ChunkReloadBlockedDetail): Event {
   const fields: DetailFields = detail
   const tags: Record<string, string> = { [CHUNK_REASON_TAG]: detail.reason }
   const chunk: Record<string, unknown> = { reason: detail.reason }
+  const fingerprint: string[] = ['chunk-reload-blocked', detail.reason]
+
+  if (detail.reason === 'retry-failed') {
+    tags['chunk.kind'] = detail.kind
+    chunk.kind = detail.kind
+    fingerprint.push(detail.kind)
+  }
 
   const error = summarizeError(fields.error)
   if (error !== undefined) {
@@ -201,11 +236,14 @@ export function toChunkReloadBlockedEvent(detail: ChunkReloadBlockedDetail): Eve
   if (typeof fields.windowMs === 'number' && Number.isFinite(fields.windowMs)) {
     chunk.windowMs = fields.windowMs
   }
+  if (typeof fields.url === 'string' && fields.url !== '') {
+    chunk.url = clip(fields.url, CONTEXT_TEXT_LIMIT)
+  }
 
   return {
     message: TITLES[detail.reason],
     level: detail.reason === 'unsupported-browser' ? 'warning' : 'error',
-    fingerprint: ['chunk-reload-blocked', detail.reason],
+    fingerprint,
     tags,
     contexts: { chunk },
   }
@@ -219,12 +257,14 @@ export function isChunkReloadBlockedEvent(event: Event): boolean {
 /*
  * Обработчик события window: одно сообщение на reason за загрузку страницы (guard может повторять
  * исход на каждую следующую ошибку чанка — issue на причину от этого не растёт, а квота не тратится).
- * Невалидный detail молча игнорируется: слушатель события не должен бросать.
+ * Невалидный detail молча игнорируется: слушатель события не должен бросать. `retry-failed` тоже
+ * игнорируется: его шлёт только ранний beacon (early-beacon.ts) — он срабатывает и до инициализации
+ * SDK, а при поднятом SDK второй отправитель дал бы дубль.
  */
 export function createChunkReloadBlockedReporter(capture: (event: Event) => void): (detail: unknown) => void {
   const reported = new Set<ChunkReloadBlockedReason>()
   return (detail) => {
-    if (!isChunkReloadBlockedDetail(detail) || reported.has(detail.reason)) {
+    if (!isChunkReloadBlockedDetail(detail) || detail.reason === 'retry-failed' || reported.has(detail.reason)) {
       return
     }
     reported.add(detail.reason)

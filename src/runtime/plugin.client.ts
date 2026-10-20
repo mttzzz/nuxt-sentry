@@ -35,7 +35,10 @@ import { shouldEnableClientSentry } from './utils/sentry-enabled'
  * После init плагин слушает `app:chunk-reload-blocked` — событие guard'а «сбой чанка проглочен,
  * перезагрузки не будет» — и шлёт Sentry-событие, по одному на reason (chunk-reload-report.ts).
  * Исход `unsupported-browser` (браузер без import maps) сюда не доходит: приложение там не
- * стартует — его шлёт ранний inline-beacon из <head> (early-beacon.ts).
+ * стартует — его шлёт ранний inline-beacon из <head> (early-beacon.ts). Исход `retry-failed`
+ * (страница не загрузилась и после перезагрузки, guard ≥ 0.6.0) reporter игнорирует: Nuxt стартует
+ * первую навигацию раньше этого плагина, SDK к событию может быть не поднят, поэтому его тоже шлёт
+ * только ранний beacon — при поднятом SDK второй отправитель дал бы дубль.
  */
 
 export default defineNuxtPlugin(async (nuxtApp) => {

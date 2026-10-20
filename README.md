@@ -12,7 +12,7 @@ Nuxt 4 module: shared Sentry boilerplate (server init, client init, Prisma span 
 - **Client `Sentry.init`** — browser tracing, Vue, console-logging, ignore-errors (view-transition / stale-chunk / manifest-poll noise), `beforeSend` интеграция со `@mttzzz/nuxt-stale-deploy-guard/sentry`. `beforeSend` дропает события, у которых весь стек не наш: анонимные кадры, `*-extension://`, движковые `[native code]`, кадры на URL самого документа и кадры с источником `undefined` — так WebKit (Chrome iOS) атрибутирует ошибки инжектированных браузером скриптов перевода/автозаполнения; код приложения живёт только в бандлах. Исключение без кадров дропается только по точной сигнатуре такого инжекта (`Error: La`). Session Replay подключается после init динамическим импортом `@sentry/replay` — отдельный чанк с origin приложения, entry легче на ~35 КБ gz; на localhost/dev (Sentry выключен) чанк не грузится. `replay: false` убирает `@sentry/replay` из сборки целиком (тарифы с малой квотой replay).
 - **Tunnel** `/api/sentry-tunnel` (с test-mode gate против полива прод-Sentry событиями из test-image'ов).
 - **Отчёт о проглоченных сбоях чанков** — событие `app:chunk-reload-blocked` от `@mttzzz/nuxt-stale-deploy-guard` («сбой чанка проглочен, перезагрузки не будет») становится Sentry-событием: по одной issue на причину, мимо `ignoreErrors` и `staleChunkFilter`. Раздел «Сбои загрузки чанков».
-- **Ранний inline-beacon** — для браузеров без import maps (iOS < 16.4), где приложение не стартует и SDK нет: ES5-скрипт в `<head>` сам шлёт событие через tunnel. Только в production-сборке.
+- **Ранний inline-beacon** — для исходов, при которых клиентского SDK нет или он ещё не поднят: браузер без import maps (iOS < 16.4, приложение не стартует) и `retry-failed` — страница не загрузилась и после автоматической перезагрузки (guard ≥ 0.6.0). ES5-скрипт в `<head>` сам шлёт событие через tunnel. Только в production-сборке.
 - **Source-map upload** — `@sentry/vite-plugin` под `SENTRY_AUTH_TOKEN` в production.
 
 ## Установка
@@ -153,35 +153,46 @@ Default report: `url`, `method`, `headers` (JSON-serialized), `error.cause` (с 
 
 Теперь каждый исход «guard проглотил сбой и перезагрузки НЕ будет» guard сообщает событием `window` `app:chunk-reload-blocked` (`CustomEvent`, `detail.reason` — причина), а nuxt-sentry отправляет его в Sentry. Нужна версия guard, которая это событие диспатчит; с более старой слушатели просто ничего не получат.
 
+Отдельный исход — `retry-failed` (guard ≥ 0.6.0): страница не загрузилась ДО `app:mounted`. Guard один раз сам перезагружает страницу (маркер `sdg-retry` в URL); если сбой повторился, он показывает экран «Страница не загрузилась» и диспатчит `retry-failed` — один раз за загрузку страницы. `detail.kind` — что не загрузилось: `chunk` (чанк страницы) или `entry` (`<script type="module">` точки входа); `detail.error` и `detail.url` (адрес не загрузившегося скрипта) есть, если guard их знает. Первый сбой, закончившийся успешной перезагрузкой, не диспатчится — такие перезагрузки считаются по логам шлюза по `sdg-retry=`.
+
+**Версии идут парой.** `retry-failed` диспатчит guard ≥ 0.6.0, а отправляет nuxt-sentry ≥ 0.11.0: nuxt-sentry < 0.11.0 молча отбрасывает неизвестный `reason`, так что guard 0.6.0 с ним отчёта не даёт; nuxt-sentry 0.11.0 с guard < 0.6.0 просто не получает этого события. Обновляйте оба пакета вместе.
+
 ### Что появится в Sentry
 
-| `reason`              | Заголовок issue                             | `level`   | Исход                                                                                       |
-| --------------------- | ------------------------------------------- | --------- | ------------------------------------------------------------------------------------------- |
-| `unsupported-browser` | Браузер без import maps                     | `warning` | В браузере нет import maps: приложение не стартует, guard показывает экран-заглушку         |
-| `not-stale`           | Чанк не загрузился, билд актуален           | `error`   | Ни одна проба не увидела чужой build-id: деплоя нет, а чанк не грузится (сеть, блокировщик) |
-| `circuit-breaker`     | Чанк не загрузился, перезагрузки исчерпаны  | `error`   | Guard хотел перезагрузить страницу, circuit breaker запретил                                |
-| `cooldown`            | Чанк не загрузился сразу после перезагрузки | `error`   | Проверка пропущена: идёт cooldown после reload                                              |
-| `no-build-id`         | Чанк не загрузился, build-id неизвестен     | `error`   | У клиента нет build-id, сверять нечего                                                      |
+| `reason`              | Заголовок issue                              | `level`   | Исход                                                                                       |
+| --------------------- | -------------------------------------------- | --------- | ------------------------------------------------------------------------------------------- |
+| `unsupported-browser` | Браузер без import maps                      | `warning` | В браузере нет import maps: приложение не стартует, guard показывает экран-заглушку         |
+| `not-stale`           | Чанк не загрузился, билд актуален            | `error`   | Ни одна проба не увидела чужой build-id: деплоя нет, а чанк не грузится (сеть, блокировщик) |
+| `circuit-breaker`     | Чанк не загрузился, перезагрузки исчерпаны   | `error`   | Guard хотел перезагрузить страницу, circuit breaker запретил                                |
+| `cooldown`            | Чанк не загрузился сразу после перезагрузки  | `error`   | Проверка пропущена: идёт cooldown после reload                                              |
+| `no-build-id`         | Чанк не загрузился, build-id неизвестен      | `error`   | У клиента нет build-id, сверять нечего                                                      |
+| `retry-failed`        | Страница не загрузилась и после перезагрузки | `error`   | Сбой до `app:mounted` повторился после перезагрузки guard'а (`kind`: `chunk` / `entry`)     |
 
-- **Одна issue на причину:** `fingerprint: ['chunk-reload-blocked', reason]`. Плагин шлёт одно событие на `reason` за загрузку страницы (дедуп в памяти) — повторы одной причины квоту не тратят.
-- **Теги:** `chunk.reason`; `chunk.error` — первые 200 символов сообщения исходной ошибки в одну строку (если она есть); `chunk.missing` — только у `unsupported-browser` (`importmap`).
-- **`contexts.chunk`:** `reason`; исходная ошибка `{ name, message, stack }` (текст и стек — до 2000 символов); `probes`, `buildId`, `attempts`, `windowMs` — те, что есть у причины.
+- **Одна issue на причину:** `fingerprint: ['chunk-reload-blocked', reason]`; у `retry-failed` — `['chunk-reload-blocked', 'retry-failed', kind]` (сбой entry и сбой чанка — разные issue). Плагин шлёт одно событие на `reason` за загрузку страницы (дедуп в памяти) — повторы одной причины квоту не тратят.
+- **Теги:** `chunk.reason`; `chunk.kind` — только у `retry-failed` (`chunk` / `entry`); `chunk.error` — первые 200 символов сообщения исходной ошибки в одну строку (если она есть); `chunk.missing` — только у `unsupported-browser` (`importmap`).
+- **`contexts.chunk`:** `reason`; исходная ошибка `{ name, message, stack }` (текст и стек — до 2000 символов); `probes`, `buildId`, `attempts`, `windowMs` — те, что есть у причины; у `retry-failed` ещё `kind` и `url` (адрес не загрузившегося скрипта, до 2000 символов).
+- **Кто отправляет:** `not-stale`, `circuit-breaker`, `cooldown`, `no-build-id` — плагин (SDK); `unsupported-browser` — ранний beacon (приложение там не стартует); `retry-failed` — **только** ранний beacon. Reporter плагина `retry-failed` игнорирует: Nuxt стартует первую навигацию раньше клиентских плагинов, поэтому SDK к событию может быть не поднят, а при поднятом SDK второй отправитель дал бы дубль.
 - **Исходная ошибка не уходит как `exception`/`cause`:** её текст совпадает с `STALE_CHUNK_PATTERNS`, и `ignoreErrors` срезал бы событие тем же способом, что обнулил репорты в инциденте. Поэтому она лежит только в контексте и теге, а заголовки issue собственные — ни один не матчится `buildIgnoreErrors()` (проверяет тест).
 - **Мимо `staleChunkFilter`:** фильтр guard'а дропает событие, если в последние 5 с в breadcrumbs был console.error про stale-chunk, а отчёт приходит как раз следом за таким console.error. Композитный `beforeSend` (`createClientBeforeSend`) пропускает событие с тегом `chunk.reason` мимо этого фильтра; остальную нормализацию оно проходит как обычно.
 - **Не шлются** (контракт guard): пропуск проверки из-за уже идущей верификации (исход отправит она) и вердикты опроса `verifyConvergedAndReload`.
 
-### Ранний beacon для браузеров без import maps
+### Ранний beacon: браузеры без import maps и `retry-failed`
 
-В браузере без import maps (WebKit < 16.4) приложение не стартует: Nuxt 4.1+ кладёт entry в `<script type="importmap">` под ключом `#entry`, импорт падает, `Sentry.init` не выполняется — клиентского плагина, который послал бы событие, нет. Поэтому в production-сборке модуль добавляет в `<head>` маленький inline-скрипт (≈2 КБ, ≈1,2 КБ gz), которому SDK не нужен:
+Два исхода случаются, когда клиентского SDK нет или он ещё не поднят, и плагин отправить событие не может:
 
-- слушает то же `app:chunk-reload-blocked` и реагирует **только** на `reason: 'unsupported-browser'` (его диспатчит inline-скрипт guard ≥ 0.5.1 в конце `<body>` сразу после `window.stop()`, так что запрос-отчёт остановкой не обрывается); остальные причины шлёт плагин;
+- **Браузер без import maps** (WebKit < 16.4): приложение не стартует — Nuxt 4.1+ кладёт entry в `<script type="importmap">` под ключом `#entry`, импорт падает, `Sentry.init` не выполняется.
+- **`retry-failed`**: страница не загрузилась до `app:mounted` и после перезагрузки. Чанк страницы импортируется при первой навигации, которую Nuxt стартует раньше клиентских плагинов (в том числе этого модуля), а entry мог не скачаться вовсе.
+
+Поэтому в production-сборке модуль добавляет в `<head>` небольшой inline-скрипт (≈4,7 КБ, ≈1,9 КБ gz), которому SDK не нужен:
+
+- слушает то же `app:chunk-reload-blocked` и реагирует **только** на `reason: 'unsupported-browser'` (его диспатчит inline-скрипт guard ≥ 0.5.1 в конце `<body>` сразу после `window.stop()`, так что запрос-отчёт остановкой не обрывается) и на `reason: 'retry-failed'` с `kind` `chunk` или `entry` (guard ≥ 0.6.0, когда страница не загрузилась и после перезагрузки); detail с другим `kind` и остальные причины игнорируются — их шлёт плагин;
 - собирает envelope сам и отправляет `navigator.sendBeacon(tunnelEndpoint, body)`; если `sendBeacon` нет, он вернул `false` или бросил — `fetch(tunnelEndpoint, { method: 'POST', body, keepalive: true })`. Заголовок envelope: `event_id`, `sent_at` и `dsn` — DSN обязателен: tunnel пересылает тело в `…/api/<projectId>/envelope/` без ключа;
-- событие то же, что у SDK-пути (заголовок, `level`, `fingerprint`, теги и `contexts.chunk` строит общая `toChunkReloadBlockedEvent`, при сборке её результат вшивается в скрипт), плюс то, что известно только в браузере: `request.url`, `request.headers['User-Agent']` (по нему Sentry определяет браузер и ОС), `release`, `environment: production`, `sdk: { name: 'nuxt-sentry.early-beacon', version }`. IP клиента дописывает tunnel;
+- событие то же, что у SDK-пути (заголовок, `level`, `fingerprint`, теги и `contexts.chunk` строит общая `toChunkReloadBlockedEvent`, при сборке её результат вшивается в скрипт — по шаблону на `unsupported-browser` и на каждый `kind` у `retry-failed`), плюс то, что известно только в браузере: `request.url`, `request.headers['User-Agent']` (по нему Sentry определяет браузер и ОС), `release`, `environment: production`, `sdk: { name: 'nuxt-sentry.early-beacon', version }`, а из `detail` — исходная ошибка `detail.error` (Error-подобный объект, строка или любое значение: тег `chunk.error` и `contexts.chunk.error` по тем же правилам, что у SDK-пути, тест сверяет оба пути на одних данных) и адрес скрипта `contexts.chunk.url` (`detail.url`). IP клиента дописывает tunnel;
 - DSN, `tunnelEndpoint`, `release`, `excludeLocalhostInProd` и версия пакета вшиваются при сборке; скрипт кладётся в `app.head.script` с ключом `nuxt-sentry-early-beacon` и `tagPosition: 'head'` — раньше bodyClose-скрипта guard, который диспатчит событие;
-- одно событие за загрузку страницы;
+- одно событие на `reason` за загрузку страницы (не больше одного `unsupported-browser` и не больше одного `retry-failed`);
 - **выключен:** в dev (скрипта нет в HTML — `nuxt.options.dev`); на `localhost`/`127.0.0.1`/`::1`/`0.0.0.0` при `excludeLocalhostInProd: true` (тот же список хостов, что у клиентского SDK); в test-image'ах (`runtimeConfig.testMode`, `SENTRY_DISABLED=1`) tunnel отвечает `204` без форварда — как и для SDK.
 
-Экран-заглушку («Версия iOS устарела» / «Браузер устарел») рисует guard, а не этот модуль. Текст скрипта — ES5, тест проверяет его парсером `acorn` с `ecmaVersion: 5` и исполняет в окружении без SDK.
+Экраны («Версия iOS устарела» / «Браузер устарел» и «Страница не загрузилась») рисует guard, а не этот модуль. Текст скрипта — ES5, тест проверяет его парсером `acorn` с `ecmaVersion: 5` и исполняет в окружении без SDK.
 
 ## Тесты
 

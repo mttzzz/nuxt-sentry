@@ -28,7 +28,15 @@ export interface NoBuildIdDetail {
     reason: 'no-build-id';
     error?: unknown;
 }
-export type ChunkReloadBlockedDetail = UnsupportedBrowserDetail | NotStaleDetail | CircuitBreakerDetail | CooldownDetail | NoBuildIdDetail;
+export declare const RETRY_FAILED_KINDS: readonly ["chunk", "entry"];
+export type RetryFailedKind = (typeof RETRY_FAILED_KINDS)[number];
+export interface RetryFailedDetail {
+    reason: 'retry-failed';
+    kind: RetryFailedKind;
+    error?: unknown;
+    url?: string;
+}
+export type ChunkReloadBlockedDetail = UnsupportedBrowserDetail | NotStaleDetail | CircuitBreakerDetail | CooldownDetail | NoBuildIdDetail | RetryFailedDetail;
 export type ChunkReloadBlockedReason = ChunkReloadBlockedDetail['reason'];
 export declare function isChunkReloadBlockedDetail(value: unknown): value is ChunkReloadBlockedDetail;
 export declare function toChunkReloadBlockedEvent(detail: ChunkReloadBlockedDetail): Event;

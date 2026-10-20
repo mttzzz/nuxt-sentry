@@ -1,4 +1,4 @@
-import { toChunkReloadBlockedEvent } from "./chunk-reload-report.js";
+import { RETRY_FAILED_KINDS, toChunkReloadBlockedEvent } from "./chunk-reload-report.js";
 import { LOCAL_HOSTS } from "./sentry-enabled.js";
 export const EARLY_BEACON_HEAD_KEY = "nuxt-sentry-early-beacon";
 export const EARLY_BEACON_SDK_NAME = "nuxt-sentry.early-beacon";
@@ -13,7 +13,7 @@ function scriptSource(configLiteral) {
   var c = ${configLiteral};
   var nav = w.navigator;
   var loc = w.location;
-  var sent = false;
+  var sent = {};
   function uuid() {
     var cr = w.crypto || w.msCrypto;
     var b = [];
@@ -34,11 +34,81 @@ function scriptSource(configLiteral) {
     return s;
   }
   function noop() {}
-  function send() {
+  function clip(s, n) {
+    var k;
+    if (s.length <= n) {
+      return s;
+    }
+    k = s.charCodeAt(n - 1);
+    return s.slice(0, k >= 55296 && k <= 56319 ? n - 1 : n);
+  }
+  function text(v) {
+    var j;
+    if (typeof v === 'string') {
+      return v;
+    }
+    try {
+      j = JSON.stringify(v);
+    } catch (e) {}
+    return j === undefined ? String(v) : j;
+  }
+  function summary(v) {
+    var m, n, k, s;
+    if (v === undefined || v === null) {
+      return null;
+    }
+    try {
+      if (typeof v !== 'object') {
+        return { message: clip(text(v), 2000) };
+      }
+      m = 'message' in v ? v.message : undefined;
+      n = 'name' in v ? v.name : undefined;
+      k = 'stack' in v ? v.stack : undefined;
+      s = { message: clip(typeof m === 'string' ? m : text(v), 2000) };
+      if (typeof n === 'string' && n !== '') {
+        s.name = n;
+      }
+      if (typeof k === 'string' && k !== '') {
+        s.stack = clip(k, 2000);
+      }
+      return s;
+    } catch (e) {
+      return null;
+    }
+  }
+  function fill(ev, d) {
+    var ch = ev.contexts.chunk;
+    var er = summary(d.error);
+    var t;
+    if (er) {
+      ch.error = er;
+      t = clip(er.message.replace(/\s+/g, ' ').trim(), 200);
+      if (t !== '') {
+        ev.tags['chunk.error'] = t;
+      }
+    }
+    if (typeof d.url === 'string' && d.url !== '') {
+      ch.url = clip(d.url, 2000);
+    }
+  }
+  function pick(d) {
+    var i;
+    var t;
+    for (i = 0; i < c.events.length; i++) {
+      t = c.events[i];
+      if (t.reason === d.reason && (t.kind === undefined || t.kind === d.kind)) {
+        return t;
+      }
+    }
+    return null;
+  }
+  function send(ev, d) {
     var id = uuid();
-    var ev = c.event;
     var ok = false;
     var body;
+    try {
+      fill(ev, d);
+    } catch (e) {}
     ev.event_id = id;
     ev.timestamp = new Date().getTime() / 1000;
     ev.platform = 'javascript';
@@ -66,12 +136,13 @@ function scriptSource(configLiteral) {
   }
   w.addEventListener('app:chunk-reload-blocked', function (e) {
     var d = e && e.detail;
-    if (sent || !d || d.reason !== 'unsupported-browser') {
+    var t = d ? pick(d) : null;
+    if (!t || sent[t.reason]) {
       return;
     }
-    sent = true;
+    sent[t.reason] = true;
     try {
-      send();
+      send(t.event, d);
     } catch (err) {}
   });
 })(window);`;
@@ -85,7 +156,17 @@ export function buildEarlyBeaconScript(options) {
       skipLocalhost: options.excludeLocalhostInProd,
       localHosts: [...LOCAL_HOSTS],
       sdk: { name: EARLY_BEACON_SDK_NAME, version: options.version },
-      event: toChunkReloadBlockedEvent({ reason: "unsupported-browser", missing: "importmap" })
+      events: [
+        {
+          reason: "unsupported-browser",
+          event: toChunkReloadBlockedEvent({ reason: "unsupported-browser", missing: "importmap" })
+        },
+        ...RETRY_FAILED_KINDS.map((kind) => ({
+          reason: "retry-failed",
+          kind,
+          event: toChunkReloadBlockedEvent({ reason: "retry-failed", kind })
+        }))
+      ]
     })
   );
 }
