@@ -46,7 +46,9 @@ export interface BootedPage {
   sendBeacon: Mock<BeaconFn>
   fetch: Mock<FetchFn>
   listenerCount: number
+  loadTimeoutListenerCount: number
   dispatch: (detail: unknown) => void
+  dispatchLoadTimeout: (detail: unknown) => void
 }
 
 /*
@@ -57,6 +59,7 @@ export interface BootedPage {
 export function boot(options: Partial<EarlyBeaconOptions> = {}, env: PageEnv = {}): BootedPage {
   const script = buildEarlyBeaconScript({ ...OPTIONS, ...options })
   const listeners: WindowListener[] = []
+  const loadTimeoutListeners: WindowListener[] = []
   const sendBeacon = vi.fn<BeaconFn>(env.sendBeacon ?? (() => true))
   const fetchSpy = vi.fn<FetchFn>(env.fetch ?? (() => Promise.resolve({ ok: true })))
   const navigator: Record<string, unknown> = { userAgent: IPHONE_UA }
@@ -69,6 +72,9 @@ export function boot(options: Partial<EarlyBeaconOptions> = {}, env: PageEnv = {
     addEventListener(type: string, listener: WindowListener) {
       if (type === 'app:chunk-reload-blocked') {
         listeners.push(listener)
+      }
+      if (type === 'app:load-timeout') {
+        loadTimeoutListeners.push(listener)
       }
     },
   }
@@ -87,9 +93,15 @@ export function boot(options: Partial<EarlyBeaconOptions> = {}, env: PageEnv = {
     sendBeacon,
     fetch: fetchSpy,
     listenerCount: listeners.length,
+    loadTimeoutListenerCount: loadTimeoutListeners.length,
     dispatch(detail) {
       for (const listener of listeners) {
         listener({ type: 'app:chunk-reload-blocked', detail })
+      }
+    },
+    dispatchLoadTimeout(detail) {
+      for (const listener of loadTimeoutListeners) {
+        listener({ type: 'app:load-timeout', detail })
       }
     },
   }

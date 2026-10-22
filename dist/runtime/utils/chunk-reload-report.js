@@ -1,3 +1,4 @@
+import { clip } from "./clip.js";
 export const CHUNK_RELOAD_BLOCKED_EVENT = "app:chunk-reload-blocked";
 export const CHUNK_REASON_TAG = "chunk.reason";
 export const RETRY_FAILED_KINDS = ["chunk", "entry"];
@@ -17,14 +18,6 @@ export function isChunkReloadBlockedDetail(value) {
     return false;
   }
   return value.reason !== "retry-failed" || "kind" in value && RETRY_FAILED_KINDS.some((kind) => kind === value.kind);
-}
-function clip(text, limit) {
-  if (text.length <= limit) {
-    return text;
-  }
-  const cut = text.slice(0, limit);
-  const last = cut.codePointAt(limit - 1) ?? 0;
-  return last >= 55296 && last <= 56319 ? cut.slice(0, -1) : cut;
 }
 function stringifyUnknown(value) {
   if (typeof value === "string") {
@@ -119,5 +112,15 @@ export function createChunkReloadBlockedReporter(capture) {
     }
     reported.add(detail.reason);
     capture(toChunkReloadBlockedEvent(detail));
+  };
+}
+export function listenChunkReloadBlocked(capture, target = globalThis) {
+  const report = createChunkReloadBlockedReporter(capture);
+  function handler(event) {
+    report(event.detail);
+  }
+  target.addEventListener(CHUNK_RELOAD_BLOCKED_EVENT, handler);
+  return () => {
+    target.removeEventListener(CHUNK_RELOAD_BLOCKED_EVENT, handler);
   };
 }

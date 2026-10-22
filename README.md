@@ -12,7 +12,7 @@ Nuxt 4 module: shared Sentry boilerplate (server init, client init, Prisma span 
 - **Client `Sentry.init`** — browser tracing, Vue, console-logging, ignore-errors (view-transition / stale-chunk / manifest-poll noise), `beforeSend` интеграция со `@mttzzz/nuxt-stale-deploy-guard/sentry`. `beforeSend` дропает события, у которых весь стек не наш: анонимные кадры, `*-extension://`, движковые `[native code]`, кадры на URL самого документа и кадры с источником `undefined` — так WebKit (Chrome iOS) атрибутирует ошибки инжектированных браузером скриптов перевода/автозаполнения; код приложения живёт только в бандлах. Исключение без кадров дропается только по точной сигнатуре такого инжекта (`Error: La`). Session Replay подключается после init динамическим импортом `@sentry/replay` — отдельный чанк с origin приложения, entry легче на ~35 КБ gz; на localhost/dev (Sentry выключен) чанк не грузится. `replay: false` убирает `@sentry/replay` из сборки целиком (тарифы с малой квотой replay).
 - **Tunnel** `/api/sentry-tunnel` (с test-mode gate против полива прод-Sentry событиями из test-image'ов).
 - **Отчёт о проглоченных сбоях чанков** — событие `app:chunk-reload-blocked` от `@mttzzz/nuxt-stale-deploy-guard` («сбой чанка проглочен, перезагрузки не будет») становится Sentry-событием: по одной issue на причину, мимо `ignoreErrors` и `staleChunkFilter`. Раздел «Сбои загрузки чанков».
-- **Ранний inline-beacon** — для исходов, при которых клиентского SDK нет или он ещё не поднят: браузер без import maps (iOS < 16.4, приложение не стартует) и `retry-failed` — страница не загрузилась и после автоматической перезагрузки (guard ≥ 0.6.0). ES5-скрипт в `<head>` сам шлёт событие через tunnel. Только в production-сборке.
+- **Ранний inline-beacon** — для исходов, при которых клиентского SDK нет или он ещё не поднят: браузер без import maps (iOS < 16.4, приложение не стартует), `retry-failed` — страница не загрузилась и после автоматической перезагрузки (guard ≥ 0.6.0) и `app:load-timeout` — watchdog'а «приложение не загрузилось за N с» (guard ≥ 0.7.0). ES5-скрипт в `<head>` сам шлёт событие через tunnel. Только в production-сборке.
 - **Source-map upload** — `@sentry/vite-plugin` под `SENTRY_AUTH_TOKEN` в production.
 
 ## Установка
@@ -176,23 +176,46 @@ Default report: `url`, `method`, `headers` (JSON-serialized), `error.cause` (с 
 - **Мимо `staleChunkFilter`:** фильтр guard'а дропает событие, если в последние 5 с в breadcrumbs был console.error про stale-chunk, а отчёт приходит как раз следом за таким console.error. Композитный `beforeSend` (`createClientBeforeSend`) пропускает событие с тегом `chunk.reason` мимо этого фильтра; остальную нормализацию оно проходит как обычно.
 - **Не шлются** (контракт guard): пропуск проверки из-за уже идущей верификации (исход отправит она) и вердикты опроса `verifyConvergedAndReload`.
 
-### Ранний beacon: браузеры без import maps и `retry-failed`
+### Ранний beacon: браузеры без import maps, `retry-failed` и watchdog
 
-Два исхода случаются, когда клиентского SDK нет или он ещё не поднят, и плагин отправить событие не может:
+Три исхода случаются, когда клиентского SDK нет или он ещё не поднят, и плагин отправить событие не может:
 
 - **Браузер без import maps** (WebKit < 16.4): приложение не стартует — Nuxt 4.1+ кладёт entry в `<script type="importmap">` под ключом `#entry`, импорт падает, `Sentry.init` не выполняется.
 - **`retry-failed`**: страница не загрузилась до `app:mounted` и после перезагрузки. Чанк страницы импортируется при первой навигации, которую Nuxt стартует раньше клиентских плагинов (в том числе этого модуля), а entry мог не скачаться вовсе.
+- **`app:load-timeout`** (watchdog, guard ≥ 0.7.0): приложение не смонтировалось за отведённое время (по умолчанию 45 с) — приложение не загрузилось. SDK не поднят по определению: не загрузилось то, что его поднимает.
 
-Поэтому в production-сборке модуль добавляет в `<head>` небольшой inline-скрипт (≈4,7 КБ, ≈1,9 КБ gz), которому SDK не нужен:
+Поэтому в production-сборке модуль добавляет в `<head>` небольшой inline-скрипт (≈6,1 КБ, ≈2,1 КБ gz), которому SDK не нужен:
 
 - слушает то же `app:chunk-reload-blocked` и реагирует **только** на `reason: 'unsupported-browser'` (его диспатчит inline-скрипт guard ≥ 0.5.1 в конце `<body>` сразу после `window.stop()`, так что запрос-отчёт остановкой не обрывается) и на `reason: 'retry-failed'` с `kind` `chunk` или `entry` (guard ≥ 0.6.0, когда страница не загрузилась и после перезагрузки); detail с другим `kind` и остальные причины игнорируются — их шлёт плагин;
+- отдельно слушает `app:load-timeout` (watchdog'а, guard ≥ 0.7.0) — и только его;
 - собирает envelope сам и отправляет `navigator.sendBeacon(tunnelEndpoint, body)`; если `sendBeacon` нет, он вернул `false` или бросил — `fetch(tunnelEndpoint, { method: 'POST', body, keepalive: true })`. Заголовок envelope: `event_id`, `sent_at` и `dsn` — DSN обязателен: tunnel пересылает тело в `…/api/<projectId>/envelope/` без ключа;
 - событие то же, что у SDK-пути (заголовок, `level`, `fingerprint`, теги и `contexts.chunk` строит общая `toChunkReloadBlockedEvent`, при сборке её результат вшивается в скрипт — по шаблону на `unsupported-browser` и на каждый `kind` у `retry-failed`), плюс то, что известно только в браузере: `request.url`, `request.headers['User-Agent']` (по нему Sentry определяет браузер и ОС), `release`, `environment: production`, `sdk: { name: 'nuxt-sentry.early-beacon', version }`, а из `detail` — исходная ошибка `detail.error` (Error-подобный объект, строка или любое значение: тег `chunk.error` и `contexts.chunk.error` по тем же правилам, что у SDK-пути, тест сверяет оба пути на одних данных) и адрес скрипта `contexts.chunk.url` (`detail.url`). IP клиента дописывает tunnel;
-- DSN, `tunnelEndpoint`, `release`, `excludeLocalhostInProd` и версия пакета вшиваются при сборке; скрипт кладётся в `app.head.script` с ключом `nuxt-sentry-early-beacon` и `tagPosition: 'head'` — раньше bodyClose-скрипта guard, который диспатчит событие;
-- одно событие на `reason` за загрузку страницы (не больше одного `unsupported-browser` и не больше одного `retry-failed`);
+- DSN, `tunnelEndpoint`, `release`, `excludeLocalhostInProd` и версия пакета вшиваются при сборке; скрипт кладётся в `app.head.script` с ключом `nuxt-sentry-early-beacon` и `tagPosition: 'head'` — раньше bodyClose-скрипта guard, который диспатчит событие, и раньше entry `<script type="module">` (e2e-тест фикстуры проверяет порядок в собранном HTML);
+- одно событие на `reason` за загрузку страницы (не больше одного `unsupported-browser`, не больше одного `retry-failed` и не больше одного `app:load-timeout`);
 - **выключен:** в dev (скрипта нет в HTML — `nuxt.options.dev`); на `localhost`/`127.0.0.1`/`::1`/`0.0.0.0` при `excludeLocalhostInProd: true` (тот же список хостов, что у клиентского SDK); в test-image'ах (`runtimeConfig.testMode`, `SENTRY_DISABLED=1`) tunnel отвечает `204` без форварда — как и для SDK.
 
 Экраны («Версия iOS устарела» / «Браузер устарел» и «Страница не загрузилась») рисует guard, а не этот модуль. Текст скрипта — ES5, тест проверяет его парсером `acorn` с `ecmaVersion: 5` и исполняет в окружении без SDK.
+
+### Watchdog «приложение не загрузилось за N с»: `app:load-timeout`
+
+Guard ≥ 0.7.0 ставит в свой inline-скрипт в `<head>` таймер: если приложение не смонтировалось за `timeoutMs` (по умолчанию 45 с) — приложение не загрузилось. Раньше это была тишина: страница висит (или висит пустой экран), а Sentry молчит — клиентский SDK не поднялся, ведь не загрузилось то, что его поднимает.
+
+Guard диспатчит window `CustomEvent` `app:load-timeout` с detail `{ reason: 'load-timeout', timeoutMs, elapsedMs, url?, kind? }`: `timeoutMs` — сколько ждали, `elapsedMs` — сколько реально прошло, `kind` — что не загрузилось (`chunk` | `entry`), если watchdog видел сбой, `url` — адрес не загрузившегося скрипта, если watchdog его знает.
+
+Событие в Sentry:
+
+| Поле            | Значение                                                                     |
+| --------------- | ---------------------------------------------------------------------------- |
+| `message`       | «Приложение не загрузилось за 45 с» — N = `round(timeoutMs / 1000)`          |
+| `level`         | `error`                                                                      |
+| `fingerprint`   | `['app-load-timeout']`                                                       |
+| `tags`          | `load.timeoutMs`, `load.elapsedMs` (числа строками), `load.kind` (если есть) |
+| `contexts.load` | `timeoutMs`, `elapsedMs`, `kind?`, `url?`                                    |
+
+Если `timeoutMs` — не положительное конечное число, заголовок без числа: «Приложение не загрузилось».
+
+- **Кто отправляет:** **только** ранний beacon. SDK-путь (плагин) это событие не слушает вовсе: приложение к этому моменту не смонтировалось, значит клиентский SDK не поднят, а при поднятом SDK второй отправитель дал бы дубль.
+- **Версии идут парой.** Watchdog диспатчит guard ≥ 0.7.0, а отправляет nuxt-sentry ≥ 0.12.0: nuxt-sentry < 0.12.0 не знает про это window-событие и молча его игнорирует, так что guard 0.7.0 с ним отчёта не даёт; nuxt-sentry 0.12.0 с guard < 0.7.0 просто не получает этого события. Обновляйте оба пакета вместе.
 
 ## Тесты
 

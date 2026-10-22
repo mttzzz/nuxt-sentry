@@ -3,6 +3,11 @@ import { describe, expect, it, vi } from 'vitest'
 
 import { toChunkReloadBlockedEvent } from '../../src/runtime/utils/chunk-reload-report'
 import { buildEarlyBeaconScript, type EarlyBeaconOptions } from '../../src/runtime/utils/early-beacon'
+import {
+  LOAD_TIMEOUT_MESSAGE_GENERIC,
+  LOAD_TIMEOUT_MESSAGE_PREFIX,
+  LOAD_TIMEOUT_MESSAGE_SUFFIX,
+} from '../../src/runtime/utils/load-timeout-report'
 import { LOCAL_HOSTS, shouldEnableClientSentry } from '../../src/runtime/utils/sentry-enabled'
 import {
   DSN,
@@ -138,10 +143,11 @@ describe('ранний beacon: что игнорируется', () => {
     expect(page.fetch).not.toHaveBeenCalled()
   })
 
-  it('сам по себе (без события) скрипт ничего не шлёт и ставит ровно один слушатель', () => {
+  it('сам по себе (без события) скрипт ничего не шлёт и ставит ровно по одному слушателю на событие', () => {
     const page = boot()
 
     expect(page.listenerCount).toBe(1)
+    expect(page.loadTimeoutListenerCount).toBe(1)
     expect(page.sendBeacon).not.toHaveBeenCalled()
   })
 })
@@ -295,7 +301,13 @@ describe('ранний beacon: текст скрипта', () => {
       toChunkReloadBlockedEvent({ reason: 'retry-failed', kind: 'chunk' }),
       toChunkReloadBlockedEvent({ reason: 'retry-failed', kind: 'entry' }),
     ].map((event) => event.message ?? '')
-    const template = titles.reduce((text, title) => text.replaceAll(title, ''), buildEarlyBeaconScript(OPTIONS))
+    /* Части заголовка watchdog'а вшиты по отдельности (значения приходят из detail в рантайме) —
+       префикс длиннее общего, поэтому вычитаем его первым. */
+    const watchdog = [LOAD_TIMEOUT_MESSAGE_PREFIX, LOAD_TIMEOUT_MESSAGE_GENERIC, LOAD_TIMEOUT_MESSAGE_SUFFIX]
+    const template = [...titles, ...watchdog].reduce(
+      (text, title) => text.replaceAll(title, ''),
+      buildEarlyBeaconScript(OPTIONS),
+    )
 
     expect(/[^\n\u0020-\u007E]/u.exec(template)).toBeNull()
   })

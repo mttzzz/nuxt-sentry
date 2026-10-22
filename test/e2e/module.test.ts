@@ -50,6 +50,9 @@ describe('module e2e — fixture: default (NUXT_TEST_MODE=1)', () => {
      * Продакшен-сборка фикстуры (nuxt.options.dev = false) обязана положить скрипт в head со вшитыми
      * DSN/tunnel. Сверка с buildEarlyBeaconScript целиком ловит и пропажу скрипта, и искажение его
      * текста по пути через Nuxt/unhead (экранирование `&&`, `<`).
+     *
+     * Скрипт обязан стоять в head ДО entry: его слушатель (события guard'а, в том числе watchdog
+     * 'app:load-timeout') должен быть зарегистрирован до того, как приложение что-то dispatch'ит.
      */
     const response = await fetch('/')
     const html = await response.text()
@@ -60,8 +63,11 @@ describe('module e2e — fixture: default (NUXT_TEST_MODE=1)', () => {
       excludeLocalhostInProd: true,
       version,
     })
+    const entryIndex = html.search(/<script type="module"[^>]*src=/u)
 
     expect(html.split(script)).toHaveLength(2)
     expect(html.indexOf(script)).toBeLessThan(html.indexOf('</head>'))
+    expect(entryIndex).toBeGreaterThan(-1)
+    expect(html.indexOf(script)).toBeLessThan(entryIndex)
   })
 })

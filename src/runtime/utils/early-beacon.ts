@@ -1,4 +1,11 @@
 import { RETRY_FAILED_KINDS, toChunkReloadBlockedEvent } from './chunk-reload-report'
+import {
+  LOAD_TIMEOUT_FINGERPRINT,
+  LOAD_TIMEOUT_LEVEL,
+  LOAD_TIMEOUT_MESSAGE_GENERIC,
+  LOAD_TIMEOUT_MESSAGE_PREFIX,
+  LOAD_TIMEOUT_MESSAGE_SUFFIX,
+} from './load-timeout-report'
 import { LOCAL_HOSTS } from './sentry-enabled'
 
 /*
@@ -20,6 +27,10 @@ import { LOCAL_HOSTS } from './sentry-enabled'
  * Остальные reason он игнорирует: при них приложение живо, и их шлёт плагин (chunk-reload-report.ts).
  * Одно событие на reason за загрузку страницы — как у reporter'а SDK-пути.
  *
+ * Второе window-событие — `app:load-timeout` (guard ≥ 0.7.0): watchdog'а «приложение не загрузилось за N с».
+ * Приложение не смонтировалось, значит клиентский SDK не поднят (в этом и смысл watchdog'а) — отправитель
+ * снова только beacon, а SDK-путь это событие не слушает вовсе (иначе при поднятом SDK был бы дубль).
+ *
  * Скрипт исполняется в самых старых браузерах, поэтому его текст — ES5 (`var`, `function`, без стрелок,
  * шаблонных строк, `?.`, `??`, spread) и обращается только к `window` и встроенным объектам. Он не
  * транспилируется: пишется строкой, чтобы текст в dist был ровно тем, что исполняется (ES5 и отсутствие
@@ -34,6 +45,11 @@ import { LOCAL_HOSTS } from './sentry-enabled'
  * detail: исходную ошибку (тег chunk.error и contexts.chunk.error — те же правила, что у summarizeError:
  * name/message/stack, обрезка, в теге одна строка) и адрес скрипта contexts.chunk.url. Тест сверяет
  * результат с toChunkReloadBlockedEvent на одном и том же detail.
+ *
+ * Событие watchdog'а (`app:load-timeout`) устроено иначе: его значения целиком приходят из detail в рантайме
+ * (timeoutMs/elapsedMs/kind/url), поэтому в скрипт вшиваются только части заголовка (кириллица в тексте
+ * скрипта запрещена) и уровень/fingerprint, а теги и contexts.load скрипт собирает сам — теми же правилами,
+ * что toLoadTimeoutEvent (load-timeout-report.ts). Тест сверяет оба пути на одних и тех же detail.
  *
  * Отправка — navigator.sendBeacon, фолбэк — fetch с keepalive, когда sendBeacon нет, вернул false (очередь
  * отклонена) или бросил. У unsupported-browser запрос начинается уже после window.stop() (порядок guard), поэтому
@@ -139,6 +155,9 @@ function scriptSource(configLiteral: string): string {
     var ch = ev.contexts.chunk;
     var er = summary(d.error);
     var t;
+    if (!ch) {
+      return;
+    }
     if (er) {
       ch.error = er;
       t = clip(er.message.replace(/\s+/g, ' ').trim(), 200);
@@ -149,6 +168,40 @@ function scriptSource(configLiteral: string): string {
     if (typeof d.url === 'string' && d.url !== '') {
       ch.url = clip(d.url, 2000);
     }
+  }
+  function num(v) {
+    return typeof v === 'number' && isFinite(v);
+  }
+  function loadTimeoutEvent(d) {
+    var e = {
+      message: c.loadTimeout.generic,
+      level: c.loadTimeout.level,
+      fingerprint: [c.loadTimeout.fingerprint],
+      tags: {},
+      contexts: { load: {} }
+    };
+    var l = e.contexts.load;
+    var s;
+    if (num(d.timeoutMs)) {
+      e.tags['load.timeoutMs'] = '' + d.timeoutMs;
+      l.timeoutMs = d.timeoutMs;
+      if (d.timeoutMs > 0) {
+        s = Math.round(d.timeoutMs / 1000);
+        e.message = c.loadTimeout.prefix + s + c.loadTimeout.suffix;
+      }
+    }
+    if (num(d.elapsedMs)) {
+      e.tags['load.elapsedMs'] = '' + d.elapsedMs;
+      l.elapsedMs = d.elapsedMs;
+    }
+    if (d.kind === 'chunk' || d.kind === 'entry') {
+      e.tags['load.kind'] = d.kind;
+      l.kind = d.kind;
+    }
+    if (typeof d.url === 'string' && d.url !== '') {
+      l.url = clip(d.url, 2000);
+    }
+    return e;
   }
   function pick(d) {
     var i;
@@ -204,6 +257,16 @@ function scriptSource(configLiteral: string): string {
       send(t.event, d);
     } catch (err) {}
   });
+  w.addEventListener('app:load-timeout', function (e) {
+    var d = e && e.detail;
+    if (!d || typeof d !== 'object' || sent['load-timeout']) {
+      return;
+    }
+    sent['load-timeout'] = true;
+    try {
+      send(loadTimeoutEvent(d), d);
+    } catch (err) {}
+  });
 })(window);`
 }
 
@@ -227,6 +290,15 @@ export function buildEarlyBeaconScript(options: EarlyBeaconOptions): string {
           event: toChunkReloadBlockedEvent({ reason: 'retry-failed', kind }),
         })),
       ],
+      /* Watchdog'а «приложение не загрузилось за N с»: значения приходят из detail в рантайме, вшиты только
+         части заголовка (кириллица в тексте скрипта запрещена) и уровень/fingerprint. */
+      loadTimeout: {
+        prefix: LOAD_TIMEOUT_MESSAGE_PREFIX,
+        suffix: LOAD_TIMEOUT_MESSAGE_SUFFIX,
+        generic: LOAD_TIMEOUT_MESSAGE_GENERIC,
+        level: LOAD_TIMEOUT_LEVEL,
+        fingerprint: LOAD_TIMEOUT_FINGERPRINT,
+      },
     }),
   )
 }

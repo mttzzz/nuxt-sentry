@@ -1,5 +1,7 @@
 import type { Event } from '@sentry/core'
 
+import { clip } from './clip'
+
 /*
  * Отчёт в Sentry о сбое загрузки чанка, который @mttzzz/nuxt-stale-deploy-guard проглотил и после
  * которого перезагрузки НЕ будет. Guard сообщает о таком исходе событием window `app:chunk-reload-blocked`
@@ -138,16 +140,6 @@ export function isChunkReloadBlockedDetail(value: unknown): value is ChunkReload
   return value.reason !== 'retry-failed' || ('kind' in value && RETRY_FAILED_KINDS.some((kind) => kind === value.kind))
 }
 
-/* Обрезка без половины суррогатной пары: одинокий суррогат делает JSON-строку невалидной для разбора на сервере. */
-function clip(text: string, limit: number): string {
-  if (text.length <= limit) {
-    return text
-  }
-  const cut = text.slice(0, limit)
-  const last = cut.codePointAt(limit - 1) ?? 0
-  return last >= 0xd800 && last <= 0xdbff ? cut.slice(0, -1) : cut
-}
-
 function stringifyUnknown(value: unknown): string {
   if (typeof value === 'string') {
     return value
@@ -269,5 +261,33 @@ export function createChunkReloadBlockedReporter(capture: (event: Event) => void
     }
     reported.add(detail.reason)
     capture(toChunkReloadBlockedEvent(detail))
+  }
+}
+
+/*
+ * Подписка SDK-пути на window-событие guard'а. Отдельная функция, а не код в plugin.client.ts: плагин тянет
+ * '#app' и в unit-тест не импортируется, а контракт «SDK-путь реагирует ТОЛЬКО на 'app:chunk-reload-blocked'»
+ * проверяется тестом — в том числе что watchdog'а ('app:load-timeout') он не отправляет: тот шлёт только
+ * ранний beacon (early-beacon.ts), иначе при поднятом SDK было бы два события.
+ *
+ * `target` — куда вешается слушатель (по умолчанию window). Параметр ради теста: в Node у globalThis нет
+ * addEventListener, а контракт подписки проверяется на подставном таргете.
+ *
+ * Возвращает функцию отписки — ею тест чистит подписку.
+ */
+export function listenChunkReloadBlocked(
+  capture: (event: Event) => void,
+  target: {
+    addEventListener: (type: string, listener: (event: Event) => void) => void
+    removeEventListener: (type: string, listener: (event: Event) => void) => void
+  } = globalThis,
+): () => void {
+  const report = createChunkReloadBlockedReporter(capture)
+  function handler(event: Event): void {
+    report((event as CustomEvent<unknown>).detail)
+  }
+  target.addEventListener(CHUNK_RELOAD_BLOCKED_EVENT, handler)
+  return () => {
+    target.removeEventListener(CHUNK_RELOAD_BLOCKED_EVENT, handler)
   }
 }

@@ -42,3 +42,7 @@ export declare function isChunkReloadBlockedDetail(value: unknown): value is Chu
 export declare function toChunkReloadBlockedEvent(detail: ChunkReloadBlockedDetail): Event;
 export declare function isChunkReloadBlockedEvent(event: Event): boolean;
 export declare function createChunkReloadBlockedReporter(capture: (event: Event) => void): (detail: unknown) => void;
+export declare function listenChunkReloadBlocked(capture: (event: Event) => void, target?: {
+    addEventListener: (type: string, listener: (event: Event) => void) => void;
+    removeEventListener: (type: string, listener: (event: Event) => void) => void;
+}): () => void;

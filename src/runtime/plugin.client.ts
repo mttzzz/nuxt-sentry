@@ -7,7 +7,7 @@ import { additionalIgnorePatterns, tracePropagationTargets } from '#nuxt-sentry/
 import { loadSessionReplay } from '#nuxt-sentry/replay'
 
 import { createClientBeforeSend } from './utils/before-send'
-import { CHUNK_RELOAD_BLOCKED_EVENT, createChunkReloadBlockedReporter } from './utils/chunk-reload-report'
+import { listenChunkReloadBlocked } from './utils/chunk-reload-report'
 import { buildIgnoreErrors } from './utils/ignore-errors'
 import { shouldEnableClientSentry } from './utils/sentry-enabled'
 
@@ -38,7 +38,8 @@ import { shouldEnableClientSentry } from './utils/sentry-enabled'
  * стартует — его шлёт ранний inline-beacon из <head> (early-beacon.ts). Исход `retry-failed`
  * (страница не загрузилась и после перезагрузки, guard ≥ 0.6.0) reporter игнорирует: Nuxt стартует
  * первую навигацию раньше этого плагина, SDK к событию может быть не поднят, поэтому его тоже шлёт
- * только ранний beacon — при поднятом SDK второй отправитель дал бы дубль.
+ * только ранний beacon — при поднятом SDK второй отправитель дал бы дубль. Событие watchdog'а
+ * (`app:load-timeout`, guard ≥ 0.7.0) плагин не слушает вовсе — его шлёт только ранний beacon.
  */
 
 export default defineNuxtPlugin(async (nuxtApp) => {
@@ -95,11 +96,13 @@ export default defineNuxtPlugin(async (nuxtApp) => {
 
   void (loadSessionReplay as () => Promise<void>)()
 
-  const reportChunkReloadBlocked = createChunkReloadBlockedReporter((event) => {
+  /*
+   * Watchdog'а ('app:load-timeout') SDK-путь не слушает: приложение к этому моменту не смонтировалось, значит
+   * клиентский SDK не поднят — отчёт уходит только ранним beacon'ом (early-beacon.ts). Слушать его здесь
+   * означало бы второй отчёт при поднятом SDK.
+   */
+  listenChunkReloadBlocked((event) => {
     Sentry.captureEvent(event)
-  })
-  globalThis.addEventListener(CHUNK_RELOAD_BLOCKED_EVENT, (event) => {
-    reportChunkReloadBlocked((event as CustomEvent<unknown>).detail)
   })
 
   // Перехват Nuxt/Vue ошибок — captureException sync.

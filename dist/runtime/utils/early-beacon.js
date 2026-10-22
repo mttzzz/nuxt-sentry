@@ -1,4 +1,11 @@
 import { RETRY_FAILED_KINDS, toChunkReloadBlockedEvent } from "./chunk-reload-report.js";
+import {
+  LOAD_TIMEOUT_FINGERPRINT,
+  LOAD_TIMEOUT_LEVEL,
+  LOAD_TIMEOUT_MESSAGE_GENERIC,
+  LOAD_TIMEOUT_MESSAGE_PREFIX,
+  LOAD_TIMEOUT_MESSAGE_SUFFIX
+} from "./load-timeout-report.js";
 import { LOCAL_HOSTS } from "./sentry-enabled.js";
 export const EARLY_BEACON_HEAD_KEY = "nuxt-sentry-early-beacon";
 export const EARLY_BEACON_SDK_NAME = "nuxt-sentry.early-beacon";
@@ -80,6 +87,9 @@ function scriptSource(configLiteral) {
     var ch = ev.contexts.chunk;
     var er = summary(d.error);
     var t;
+    if (!ch) {
+      return;
+    }
     if (er) {
       ch.error = er;
       t = clip(er.message.replace(/\s+/g, ' ').trim(), 200);
@@ -90,6 +100,40 @@ function scriptSource(configLiteral) {
     if (typeof d.url === 'string' && d.url !== '') {
       ch.url = clip(d.url, 2000);
     }
+  }
+  function num(v) {
+    return typeof v === 'number' && isFinite(v);
+  }
+  function loadTimeoutEvent(d) {
+    var e = {
+      message: c.loadTimeout.generic,
+      level: c.loadTimeout.level,
+      fingerprint: [c.loadTimeout.fingerprint],
+      tags: {},
+      contexts: { load: {} }
+    };
+    var l = e.contexts.load;
+    var s;
+    if (num(d.timeoutMs)) {
+      e.tags['load.timeoutMs'] = '' + d.timeoutMs;
+      l.timeoutMs = d.timeoutMs;
+      if (d.timeoutMs > 0) {
+        s = Math.round(d.timeoutMs / 1000);
+        e.message = c.loadTimeout.prefix + s + c.loadTimeout.suffix;
+      }
+    }
+    if (num(d.elapsedMs)) {
+      e.tags['load.elapsedMs'] = '' + d.elapsedMs;
+      l.elapsedMs = d.elapsedMs;
+    }
+    if (d.kind === 'chunk' || d.kind === 'entry') {
+      e.tags['load.kind'] = d.kind;
+      l.kind = d.kind;
+    }
+    if (typeof d.url === 'string' && d.url !== '') {
+      l.url = clip(d.url, 2000);
+    }
+    return e;
   }
   function pick(d) {
     var i;
@@ -145,6 +189,16 @@ function scriptSource(configLiteral) {
       send(t.event, d);
     } catch (err) {}
   });
+  w.addEventListener('app:load-timeout', function (e) {
+    var d = e && e.detail;
+    if (!d || typeof d !== 'object' || sent['load-timeout']) {
+      return;
+    }
+    sent['load-timeout'] = true;
+    try {
+      send(loadTimeoutEvent(d), d);
+    } catch (err) {}
+  });
 })(window);`;
 }
 export function buildEarlyBeaconScript(options) {
@@ -166,7 +220,16 @@ export function buildEarlyBeaconScript(options) {
           kind,
           event: toChunkReloadBlockedEvent({ reason: "retry-failed", kind })
         }))
-      ]
+      ],
+      /* Watchdog'а «приложение не загрузилось за N с»: значения приходят из detail в рантайме, вшиты только
+         части заголовка (кириллица в тексте скрипта запрещена) и уровень/fingerprint. */
+      loadTimeout: {
+        prefix: LOAD_TIMEOUT_MESSAGE_PREFIX,
+        suffix: LOAD_TIMEOUT_MESSAGE_SUFFIX,
+        generic: LOAD_TIMEOUT_MESSAGE_GENERIC,
+        level: LOAD_TIMEOUT_LEVEL,
+        fingerprint: LOAD_TIMEOUT_FINGERPRINT
+      }
     })
   );
 }
