@@ -4,6 +4,17 @@ import { describe, expect, it } from 'vitest'
 import { listenChunkReloadBlocked } from '../../src/runtime/utils/chunk-reload-report'
 import { toLoadTimeoutEvent, type LoadTimeoutDetail } from '../../src/runtime/utils/load-timeout-report'
 import { DSN, IPHONE_UA, PAGE, TUNNEL, beaconEnvelope, boot, parseEnvelope } from './helpers/early-beacon-page'
+import {
+  BOOT_DETAIL,
+  BOOT_EVENT,
+  ENTRY_CSS,
+  ENTRY_JS,
+  LEGACY_DETAIL,
+  LEGACY_EVENT,
+  NETWORK_DETAIL,
+  NETWORK_EVENT,
+  detailWith,
+} from './helpers/load-timeout-details'
 
 const DETAIL: LoadTimeoutDetail = {
   reason: 'load-timeout',
@@ -161,10 +172,71 @@ describe('ранний beacon: watchdog «приложение не загруз
   })
 })
 
+describe('ранний beacon: watchdog со стадиями (guard ≥ 0.8.0)', () => {
+  it('network: заголовок и fingerprint с хостом, теги диагностики и контекст со списками', () => {
+    expect(sentReport(NETWORK_DETAIL)).toEqual(NETWORK_EVENT)
+  })
+
+  it('boot: заголовок и fingerprint без хоста, теги диагностики и контекст с ошибками', () => {
+    expect(sentReport(BOOT_DETAIL)).toEqual(BOOT_EVENT)
+  })
+
+  it('detail guard 0.7.0 (без стадии): заголовок и fingerprint прежние, новых тегов нет', () => {
+    expect(sentReport(LEGACY_DETAIL)).toEqual(LEGACY_EVENT)
+  })
+
+  it('network без host: unknown в заголовке и fingerprint, тега host нет', () => {
+    const report = sentReport(detailWith(NETWORK_DETAIL, { host: undefined }))
+
+    expect(report.message).toBe('Приложение не загрузилось за 30 с: не пришли ресурсы (unknown)')
+    expect(report.fingerprint).toEqual(['app-load-timeout', 'network', 'unknown'])
+    expect((report.tags as Record<string, string>)['load.host']).toBeUndefined()
+  })
+
+  it('общий заголовок без числа держит уточнение стадии', () => {
+    expect(sentReport(detailWith(BOOT_DETAIL, { timeoutMs: Number.NaN })).message).toBe(
+      'Приложение не загрузилось: сбой при старте',
+    )
+    expect(sentReport(detailWith(NETWORK_DETAIL, { timeoutMs: 0 })).message).toBe(
+      'Приложение не загрузилось: не пришли ресурсы (fonts.googleapis.com)',
+    )
+  })
+
+  it('один отчёт на документ: после network watchdog другой стадии не шлётся', () => {
+    const page = boot()
+
+    page.dispatchLoadTimeout(NETWORK_DETAIL)
+    page.dispatchLoadTimeout(BOOT_DETAIL)
+
+    expect(page.sendBeacon).toHaveBeenCalledTimes(1)
+    expect(beaconEnvelope(page).payload.fingerprint).toEqual(NETWORK_EVENT.fingerprint)
+  })
+
+  it('отчёт со стадией уходит тем же envelope: заголовок с DSN, item event, поля браузера', () => {
+    const page = boot()
+
+    page.dispatchLoadTimeout(NETWORK_DETAIL)
+    const { header, item, payload } = beaconEnvelope(page)
+
+    expect(header.dsn).toBe(DSN)
+    expect(header.event_id).toBe(payload.event_id)
+    expect(item).toEqual({ type: 'event' })
+    expect(payload).toMatchObject({
+      platform: 'javascript',
+      request: { url: PAGE, headers: { 'User-Agent': IPHONE_UA } },
+      environment: 'production',
+      sdk: { name: 'nuxt-sentry.early-beacon', version: '0.10.0' },
+    })
+  })
+})
+
 describe('ранний beacon: watchdog совпадает с SDK-мапингом на тех же данных', () => {
   it.each<[string, unknown]>([
-    ['полный detail', DETAIL],
-    ['с kind и url', { reason: 'load-timeout', timeoutMs: 45_000, elapsedMs: 45_000, kind: 'chunk', url: ENTRY_URL }],
+    ['network: полный detail', NETWORK_DETAIL],
+    ['boot: полный detail', BOOT_DETAIL],
+    ['guard 0.7.0: полный detail', DETAIL],
+    ['guard 0.7.0: с kind и url', LEGACY_DETAIL],
+    ['guard 0.7.0: с kind chunk и url скрипта', { ...DETAIL, kind: 'chunk', url: ENTRY_URL }],
     ['без kind и url', { reason: 'load-timeout', timeoutMs: 45_000, elapsedMs: 45_000 }],
     ['дробный timeoutMs', { reason: 'load-timeout', timeoutMs: 45_500, elapsedMs: 45_500 }],
     ['timeoutMs ноль', { reason: 'load-timeout', timeoutMs: 0, elapsedMs: 45_123 }],
@@ -175,6 +247,77 @@ describe('ранний beacon: watchdog совпадает с SDK-мапинго
     [
       'длинный url',
       { reason: 'load-timeout', timeoutMs: 45_000, elapsedMs: 45_000, url: `${ENTRY_URL}?${'q'.repeat(3000)}` },
+    ],
+    ['network без host', detailWith(NETWORK_DETAIL, { host: undefined })],
+    ['network: host из пробелов', detailWith(NETWORK_DETAIL, { host: ' \n\t ' })],
+    ['network: host не строка', detailWith(NETWORK_DETAIL, { host: 42 })],
+    ['network: host с пробелами и переводом строки', detailWith(NETWORK_DETAIL, { host: '  cdn.pushka.biz \n:8443 ' })],
+    ['boot: host игнорируется', detailWith(BOOT_DETAIL, { host: 'cdn.pushka.biz' })],
+    ['без стадии, но с диагностикой и host', detailWith(NETWORK_DETAIL, { stage: undefined })],
+    ['неизвестная стадия', detailWith(NETWORK_DETAIL, { stage: 'weird' })],
+    ['стадия другого регистра', detailWith(BOOT_DETAIL, { stage: 'Boot' })],
+    ['network: timeoutMs не число', detailWith(NETWORK_DETAIL, { timeoutMs: '30000' })],
+    ['boot: timeoutMs ноль', detailWith(BOOT_DETAIL, { timeoutMs: 0 })],
+    ['network: kind chunk', detailWith(NETWORK_DETAIL, { kind: 'chunk' })],
+    ['boot: неизвестный kind', detailWith(BOOT_DETAIL, { kind: 'page' })],
+    [
+      'все новые поля битые',
+      detailWith(NETWORK_DETAIL, {
+        visibleMs: '1',
+        hiddenMs: Number.NaN,
+        url: 7,
+        readyState: false,
+        online: 'yes',
+        vueMounted: 'no',
+        pending: 'x',
+        pendingCount: Number.POSITIVE_INFINITY,
+        criticalCount: [],
+        errors: 'e',
+      }),
+    ],
+    [
+      'pending и errors: смешанные записи',
+      detailWith(BOOT_DETAIL, {
+        pending: [ENTRY_CSS, 42, null, { a: 1 }, ENTRY_JS],
+        errors: [
+          { message: 'first', source: `${ENTRY_JS}:1:2` },
+          { message: 42, source: 'dropped.js:1:1' },
+          'plain string',
+          null,
+          [],
+          { source: 'no-message.js:1:1' },
+          { message: 'broken source', source: 7 },
+          { message: 'empty source', source: '' },
+          { message: '' },
+        ],
+      }),
+    ],
+    ['pending и errors: не массивы', detailWith(BOOT_DETAIL, { pending: { length: 1, 0: ENTRY_CSS }, errors: null })],
+    ['pending и errors: пустые', detailWith(NETWORK_DETAIL, { pending: [], errors: [] })],
+    ['online false, vueMounted true', detailWith(BOOT_DETAIL, { online: false, vueMounted: true })],
+    [
+      'дробные, нулевые и отрицательные числа',
+      detailWith(NETWORK_DETAIL, { visibleMs: 12.5, hiddenMs: -1, pendingCount: 0 }),
+    ],
+    ['readyState из пробелов', detailWith(BOOT_DETAIL, { readyState: '  ' })],
+    [
+      'длинные значения',
+      detailWith(NETWORK_DETAIL, {
+        host: 'h'.repeat(300),
+        readyState: 'r'.repeat(300),
+        url: `${ENTRY_URL}?${'q'.repeat(3000)}`,
+        pending: ['p'.repeat(3000), ENTRY_CSS],
+        errors: [{ message: 'm'.repeat(3000), source: 's'.repeat(3000) }],
+      }),
+    ],
+    [
+      'суррогатная пара на границах лимитов',
+      detailWith(NETWORK_DETAIL, {
+        host: `${'a'.repeat(199)}😀`,
+        readyState: `${'r'.repeat(199)}😀`,
+        pending: [`${'p'.repeat(1999)}😀`],
+        errors: [{ message: `${'m'.repeat(1999)}😀`, source: `${'s'.repeat(1999)}😀` }],
+      }),
     ],
   ])('detail: %s', (_name, detail) => {
     expect(sentReport(detail)).toEqual(reportOf(toLoadTimeoutEvent(detail as LoadTimeoutDetail)))

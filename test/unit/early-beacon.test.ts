@@ -4,7 +4,9 @@ import { describe, expect, it, vi } from 'vitest'
 import { toChunkReloadBlockedEvent } from '../../src/runtime/utils/chunk-reload-report'
 import { buildEarlyBeaconScript, type EarlyBeaconOptions } from '../../src/runtime/utils/early-beacon'
 import {
+  LOAD_TIMEOUT_MESSAGE_BOOT,
   LOAD_TIMEOUT_MESSAGE_GENERIC,
+  LOAD_TIMEOUT_MESSAGE_NETWORK_PREFIX,
   LOAD_TIMEOUT_MESSAGE_PREFIX,
   LOAD_TIMEOUT_MESSAGE_SUFFIX,
 } from '../../src/runtime/utils/load-timeout-report'
@@ -301,9 +303,16 @@ describe('ранний beacon: текст скрипта', () => {
       toChunkReloadBlockedEvent({ reason: 'retry-failed', kind: 'chunk' }),
       toChunkReloadBlockedEvent({ reason: 'retry-failed', kind: 'entry' }),
     ].map((event) => event.message ?? '')
-    /* Части заголовка watchdog'а вшиты по отдельности (значения приходят из detail в рантайме) —
-       префикс длиннее общего, поэтому вычитаем его первым. */
-    const watchdog = [LOAD_TIMEOUT_MESSAGE_PREFIX, LOAD_TIMEOUT_MESSAGE_GENERIC, LOAD_TIMEOUT_MESSAGE_SUFFIX]
+    /* Части заголовка watchdog'а вшиты по отдельности (значения приходят из detail в рантайме). Вычитаем от
+       длинных к коротким: короткая часть (« с» после секунд) входит и в длинные («: сбой при старте»), а
+       префикс «…не загрузилось за » длиннее общего заголовка. Закрывающая скобка заголовка network — ASCII. */
+    const watchdog = [
+      LOAD_TIMEOUT_MESSAGE_PREFIX,
+      LOAD_TIMEOUT_MESSAGE_GENERIC,
+      LOAD_TIMEOUT_MESSAGE_NETWORK_PREFIX,
+      LOAD_TIMEOUT_MESSAGE_BOOT,
+      LOAD_TIMEOUT_MESSAGE_SUFFIX,
+    ].toSorted((a, b) => b.length - a.length)
     const template = [...titles, ...watchdog].reduce(
       (text, title) => text.replaceAll(title, ''),
       buildEarlyBeaconScript(OPTIONS),
