@@ -222,7 +222,7 @@ Guard диспатчит window `CustomEvent` `app:load-timeout` с detail:
 | `vueMounted`                    | в документе есть элемент с `[data-v-app]`: Vue смонтирован, а плагин guard'а о монтировании не сообщил                                                               |
 | `errors`                        | до 3 первых ошибок до монтирования (runtime-ошибки и `unhandledrejection`): `{ message, source? }`, `source` — `host + pathname:line:col`                            |
 
-Критичные ресурсы — `<link rel="stylesheet">` (кроме `alternate`, `disabled` и не подходящих по `media`), `<link rel="modulepreload">` и `<script src>` (кроме классических `async`); `prefetch`, `preload`, `icon` и `preconnect` не критичны. Зависшим считается ресурс, которого нет в Resource Timing; без него `pending` пуст.
+Критичные ресурсы — `<link rel="stylesheet">` (кроме `alternate`, `disabled` и не подходящих по `media`), `<link rel="modulepreload">` и `<script src>` (кроме классических `async` и `nomodule`); `prefetch`, `preload`, `icon` и `preconnect` не критичны. Зависшим считается ресурс, которого нет в Resource Timing; без него `pending` пуст.
 
 Событие в Sentry:
 
