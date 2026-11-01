@@ -4,10 +4,11 @@ import { defu } from 'defu';
 import { existsSync } from 'node:fs';
 import { resolve, isAbsolute } from 'node:path';
 import { EARLY_BEACON_HEAD_KEY, buildEarlyBeaconScript } from '../dist/runtime/utils/early-beacon.js';
+import { createRouteMatcher } from '../dist/runtime/utils/route-patterns.js';
 import { buildTunnelIngestUrl } from '../dist/runtime/utils/tunnel-ingest-url.js';
 import { readdir, rm } from 'node:fs/promises';
 
-const version = "0.13.0";
+const version = "0.14.0";
 
 function resolveSourcePath(userPath, rootDir, srcDir) {
   let absolute;
@@ -83,7 +84,8 @@ const DEFAULTS = {
   tracePropagationTargets: [/^\/api\//u],
   additionalIgnorePatterns: [],
   ignoredRoutes: ["/api/sentry-tunnel", "/_nuxt", "/api/ws", "/api/health", "/__nuxt_error"],
-  excludeLocalhostInProd: true
+  excludeLocalhostInProd: true,
+  clientDisabledRoutes: []
 };
 const module$1 = defineNuxtModule({
   meta: {
@@ -142,8 +144,10 @@ const module$1 = defineNuxtModule({
       tracePropagationTargets: opts.tracePropagationTargets ?? DEFAULTS.tracePropagationTargets,
       additionalIgnorePatterns: opts.additionalIgnorePatterns ?? DEFAULTS.additionalIgnorePatterns,
       ignoredRoutes: opts.ignoredRoutes ?? DEFAULTS.ignoredRoutes,
-      excludeLocalhostInProd: opts.excludeLocalhostInProd ?? DEFAULTS.excludeLocalhostInProd
+      excludeLocalhostInProd: opts.excludeLocalhostInProd ?? DEFAULTS.excludeLocalhostInProd,
+      client: { disabledRoutes: opts.client?.disabledRoutes ?? DEFAULTS.clientDisabledRoutes }
     };
+    createRouteMatcher(resolved.client.disabledRoutes);
     const tunnelIngestUrl = buildTunnelIngestUrl(resolved.dsn);
     const releaseRaw = process.env.SENTRY_RELEASE?.trim();
     const release = releaseRaw && releaseRaw.length > 0 ? releaseRaw : void 0;
@@ -177,6 +181,7 @@ const module$1 = defineNuxtModule({
         `export const ignoredRoutes = ${serializeBuildLiteral(resolved.ignoredRoutes)}`,
         `export const tracePropagationTargets = ${serializeBuildLiteral(resolved.tracePropagationTargets)}`,
         `export const additionalIgnorePatterns = ${serializeBuildLiteral(resolved.additionalIgnorePatterns)}`,
+        `export const disabledRoutes = ${serializeBuildLiteral(resolved.client.disabledRoutes)}`,
         ""
       ].join("\n")
     });
@@ -245,6 +250,7 @@ Server-side files (e.g. server/utils/error-filter.ts) need \`~~/server/...\`.`
           tunnelEndpoint: resolved.tunnelEndpoint,
           release,
           excludeLocalhostInProd: resolved.excludeLocalhostInProd,
+          disabledRoutes: resolved.client.disabledRoutes,
           version
         })
       });

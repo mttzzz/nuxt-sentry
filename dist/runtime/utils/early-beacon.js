@@ -10,6 +10,7 @@ import {
   LOAD_TIMEOUT_MESSAGE_PREFIX,
   LOAD_TIMEOUT_MESSAGE_SUFFIX
 } from "./load-timeout-report.js";
+import { routePatternToRegExpSource } from "./route-patterns.js";
 import { LOCAL_HOSTS } from "./sentry-enabled.js";
 export const EARLY_BEACON_HEAD_KEY = "nuxt-sentry-early-beacon";
 export const EARLY_BEACON_SDK_NAME = "nuxt-sentry.early-beacon";
@@ -19,7 +20,15 @@ function toScriptLiteral(value) {
     (char) => `\\u${(char.codePointAt(0) ?? 0).toString(16).padStart(4, "0")}`
   );
 }
-function scriptSource(configLiteral) {
+const DISABLED_ROUTES_GATE = String.raw`
+  if (
+    c.disabledRoutes.some(function (s) {
+      return new RegExp(s).test(loc.pathname);
+    })
+  ) {
+    return;
+  }`;
+function scriptSource(configLiteral, disabledRoutesGate) {
   return String.raw`(function (w) {
   var c = ${configLiteral};
   var nav = w.navigator;
@@ -267,7 +276,7 @@ function scriptSource(configLiteral) {
   }
   if (c.skipLocalhost && c.localHosts.indexOf(loc.hostname) !== -1) {
     return;
-  }
+  }${disabledRoutesGate}
   w.addEventListener('app:chunk-reload-blocked', function (e) {
     var d = e && e.detail;
     var t = d ? pick(d) : null;
@@ -292,6 +301,8 @@ function scriptSource(configLiteral) {
 })(window);`;
 }
 export function buildEarlyBeaconScript(options) {
+  const disabledRoutes = (options.disabledRoutes ?? []).map((pattern) => routePatternToRegExpSource(pattern));
+  const hasDisabledRoutes = disabledRoutes.length > 0;
   return scriptSource(
     toScriptLiteral({
       dsn: options.dsn,
@@ -299,6 +310,8 @@ export function buildEarlyBeaconScript(options) {
       release: options.release,
       skipLocalhost: options.excludeLocalhostInProd,
       localHosts: [...LOCAL_HOSTS],
+      /* Ключ только при непустом списке: без опции и конфиг, и текст скрипта побайтно прежние. */
+      ...hasDisabledRoutes ? { disabledRoutes } : {},
       sdk: { name: EARLY_BEACON_SDK_NAME, version: options.version },
       events: [
         {
@@ -324,6 +337,7 @@ export function buildEarlyBeaconScript(options) {
         level: LOAD_TIMEOUT_LEVEL,
         fingerprint: LOAD_TIMEOUT_FINGERPRINT
       }
-    })
+    }),
+    hasDisabledRoutes ? DISABLED_ROUTES_GATE : ""
   );
 }

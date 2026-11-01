@@ -13,6 +13,7 @@ Nuxt 4 module: shared Sentry boilerplate (server init, client init, Prisma span 
 - **Tunnel** `/api/sentry-tunnel` (с test-mode gate против полива прод-Sentry событиями из test-image'ов).
 - **Отчёт о проглоченных сбоях чанков** — событие `app:chunk-reload-blocked` от `@mttzzz/nuxt-stale-deploy-guard` («сбой чанка проглочен, перезагрузки не будет») становится Sentry-событием: по одной issue на причину, мимо `ignoreErrors` и `staleChunkFilter`. Раздел «Сбои загрузки чанков».
 - **Ранний inline-beacon** — для исходов, при которых клиентского SDK нет или он ещё не поднят: браузер без import maps (iOS < 16.4, приложение не стартует), `retry-failed` — страница не загрузилась и после автоматической перезагрузки (guard ≥ 0.6.0) и `app:load-timeout` — watchdog'а «приложение не загрузилось за N с» (guard ≥ 0.7.0; стадия и диагностика причины — guard ≥ 0.8.0). ES5-скрипт в `<head>` сам шлёт событие через tunnel. Только в production-сборке.
+- **Страницы без клиентского Sentry** — `sentry.client.disabledRoutes`: документ, открытый на указанном пути (публичные страницы, окружение которых не починить), не поднимает ни SDK, ни хуки, ни ранний beacon. Серверный Sentry не затрагивается. Раздел «Страницы без клиентского Sentry».
 - **Source-map upload** — `@sentry/vite-plugin` под `SENTRY_AUTH_TOKEN` в production.
 
 ## Установка
@@ -43,6 +44,7 @@ export default defineNuxtConfig({
     // additionalIgnorePatterns: [],
     // ignoredRoutes: ['/api/sentry-tunnel', '/_nuxt', '/api/ws', '/api/health', '/__nuxt_error'], // префиксы пути — без транзакций
     // excludeLocalhostInProd: true,
+    // client: { disabledRoutes: ['/clients/**'] }, // документ на таком пути не шлёт клиентских событий — раздел «Страницы без клиентского Sentry»
   },
 })
 ```
@@ -190,9 +192,9 @@ Default report: `url`, `method`, `headers` (JSON-serialized), `error.cause` (с 
 - отдельно слушает `app:load-timeout` (watchdog'а, guard ≥ 0.7.0) — и только его;
 - собирает envelope сам и отправляет `navigator.sendBeacon(tunnelEndpoint, body)`; если `sendBeacon` нет, он вернул `false` или бросил — `fetch(tunnelEndpoint, { method: 'POST', body, keepalive: true })`. Заголовок envelope: `event_id`, `sent_at` и `dsn` — DSN обязателен: tunnel пересылает тело в `…/api/<projectId>/envelope/` без ключа;
 - событие то же, что у SDK-пути (заголовок, `level`, `fingerprint`, теги и `contexts.chunk` строит общая `toChunkReloadBlockedEvent`, при сборке её результат вшивается в скрипт — по шаблону на `unsupported-browser` и на каждый `kind` у `retry-failed`), плюс то, что известно только в браузере: `request.url`, `request.headers['User-Agent']` (по нему Sentry определяет браузер и ОС), `release`, `environment: production`, `sdk: { name: 'nuxt-sentry.early-beacon', version }`, а из `detail` — исходная ошибка `detail.error` (Error-подобный объект, строка или любое значение: тег `chunk.error` и `contexts.chunk.error` по тем же правилам, что у SDK-пути, тест сверяет оба пути на одних данных) и адрес скрипта `contexts.chunk.url` (`detail.url`). IP клиента дописывает tunnel;
-- DSN, `tunnelEndpoint`, `release`, `excludeLocalhostInProd` и версия пакета вшиваются при сборке; скрипт кладётся в `app.head.script` с ключом `nuxt-sentry-early-beacon` и `tagPosition: 'head'` — раньше bodyClose-скрипта guard, который диспатчит событие, и раньше entry `<script type="module">` (e2e-тест фикстуры проверяет порядок в собранном HTML);
+- DSN, `tunnelEndpoint`, `release`, `excludeLocalhostInProd`, паттерны `client.disabledRoutes` (источниками RegExp) и версия пакета вшиваются при сборке; скрипт кладётся в `app.head.script` с ключом `nuxt-sentry-early-beacon` и `tagPosition: 'head'` — раньше bodyClose-скрипта guard, который диспатчит событие, и раньше entry `<script type="module">` (e2e-тест фикстуры проверяет порядок в собранном HTML);
 - одно событие на `reason` за загрузку страницы (не больше одного `unsupported-browser`, не больше одного `retry-failed` и не больше одного `app:load-timeout`);
-- **выключен:** в dev (скрипта нет в HTML — `nuxt.options.dev`); на `localhost`/`127.0.0.1`/`::1`/`0.0.0.0` при `excludeLocalhostInProd: true` (тот же список хостов, что у клиентского SDK); в test-image'ах (`runtimeConfig.testMode`, `SENTRY_DISABLED=1`) tunnel отвечает `204` без форварда — как и для SDK.
+- **выключен:** в dev (скрипта нет в HTML — `nuxt.options.dev`); на `localhost`/`127.0.0.1`/`::1`/`0.0.0.0` при `excludeLocalhostInProd: true` (тот же список хостов, что у клиентского SDK); на документе, чей путь подпал под `client.disabledRoutes` (скрипт не подписывается ни на одно событие — раздел «Страницы без клиентского Sentry»); в test-image'ах (`runtimeConfig.testMode`, `SENTRY_DISABLED=1`) tunnel отвечает `204` без форварда — как и для SDK.
 
 Экраны («Версия iOS устарела» / «Браузер устарел» и «Страница не загрузилась») рисует guard, а не этот модуль. Текст скрипта — ES5, тест проверяет его парсером `acorn` с `ecmaVersion: 5` и исполняет в окружении без SDK.
 
@@ -243,6 +245,55 @@ Guard диспатчит window `CustomEvent` `app:load-timeout` с detail:
 - **Кто отправляет:** **только** ранний beacon. SDK-путь (плагин) это событие не слушает вовсе: приложение к этому моменту не смонтировалось, значит клиентский SDK не поднят, а при поднятом SDK второй отправитель дал бы дубль. Скрипт собирает событие сам, теми же правилами, что `toLoadTimeoutEvent`: тест сверяет оба пути на одних и тех же detail (`network`, `boot`, detail guard 0.7.0, битые поля).
 - **Один отчёт на документ.** Guard диспатчит событие один раз в момент, когда порог видимого ожидания достигнут, — без отложенных дополнений и отправки на `pagehide`; beacon тоже шлёт не больше одного `app:load-timeout` за загрузку страницы.
 - **Версии идут парой.** Watchdog диспатчит guard ≥ 0.7.0, а отправляет nuxt-sentry ≥ 0.12.0: nuxt-sentry < 0.12.0 не знает про это window-событие и молча его игнорирует, так что guard 0.7.0 с ним отчёта не даёт; nuxt-sentry 0.12.0 с guard < 0.7.0 просто не получает этого события. Стадии и диагностика — guard ≥ 0.8.0 и nuxt-sentry ≥ 0.13.0: nuxt-sentry 0.12.0 читает у нового detail только `timeoutMs`, `elapsedMs`, `kind` и `url` — получится одна issue `['app-load-timeout']` без причины, а nuxt-sentry 0.13.0 с guard 0.7.0 даёт прежний отчёт (см. выше). Обновляйте оба пакета вместе.
+
+## Страницы без клиентского Sentry: `client.disabledRoutes`
+
+Публичные страницы, которые открывают посторонние посетители (у kp.modmb.com — карточка клиента `/clients/**`), дают много клиентских issue из окружения, которое не починить правкой кода: встроенные браузеры мессенджеров, кошельки, приватный режим, нестабильная сеть. Такой сигнал не ведёт к правке, зато шумит и тратит квоту. Для этих страниц клиентский Sentry можно выключить целиком:
+
+```ts
+sentry: {
+  // …
+  client: { disabledRoutes: ['/clients/**'] }, // default: []
+}
+```
+
+Серверный Sentry (`instrument.server`, nitro error hook, `tracesSampler`, tunnel) опция не трогает: ошибки сервера на тех же страницах приходят как обычно. Страницы, которых нет в списке, работают под полным клиентским Sentry.
+
+### Синтаксис паттернов
+
+Как у routeRules Nitro, но только целыми сегментами пути:
+
+| Паттерн         | Совпадает                                               | Не совпадает                                       |
+| --------------- | ------------------------------------------------------- | -------------------------------------------------- |
+| `/clients`      | `/clients`                                              | `/clients/`, `/clients/abc`, `/clientsx`           |
+| `/clients/*`    | `/clients/abc`                                          | `/clients`, `/clients/`, `/clients/a/b`            |
+| `/clients/**`   | `/clients`, `/clients/`, `/clients/abc`, `/clients/a/b` | `/clientsx`, `/client`, `/x/clients/abc`           |
+| `/users/*/edit` | `/users/42/edit`                                        | `/users/edit`, `/users//edit`, `/users/42/43/edit` |
+
+- `*` — ровно один непустой сегмент. `**` — только последним сегментом (`…/**`): этот префикс и всё, что под ним, включая сам префикс; `/**` — любой путь.
+- Всё остальное — литерал: `.`, `+`, `(`, `[`, `$` и прочие знаки регулярок экранируются.
+- `*` или `**` внутри сегмента (`/a*`) и `**` не в конце пути не поддерживаются: это ошибка при setup модуля — и в сборке, и при старте dev (`[nuxt-sentry] sentry.client.disabledRoutes: unsupported pattern …`), а не молчаливое «не совпало».
+- Сверка идёт с `location.pathname` как есть: регистр значим; query и hash в пути нет; завершающий слеш не нормализуется (`/clients` не совпадает с `/clients/`); символы вне ASCII — в закодированном браузером виде (`/%D0%BA…`); `app.baseURL`, если он задан, входит в путь, и паттерн должен его содержать. Паттерн начинается с `/` — иначе он не совпадёт ни с одним путём.
+- Паттерны — строки, не RegExp, и фиксируются при сборке: `runtimeConfig` RegExp не сериализует, а beacon вшит в HTML при сборке, так что список не переопределяется на лету и плагин с beacon'ом решают по одному и тому же. Паттерн превращает в источник RegExp одна функция (`runtime/utils/route-patterns.ts`), и плагин, и beacon исполняют этот же текст (`new RegExp(source)` без флагов) — расхождения семантики между ними быть не может.
+
+### Решение принимается один раз на документ
+
+Документ — одна загрузка страницы (SPA-оболочка или серверный рендер). Решение принимается при его старте, по `location.pathname` на этот момент, и позже не меняется:
+
+- документ, загруженный на отключённом пути, не отчитывается никогда — даже если пользователь затем перейдёт по ссылкам SPA на другую страницу;
+- документ, загруженный на странице вне списка, продолжает отчитываться и после перехода внутри SPA на отключённый путь.
+
+### Что отключается
+
+На документе с совпавшим путём:
+
+- клиентский плагин возвращается раньше всего остального: нет `Sentry.init` (а с ним ни исключений, ни console-issue, ни трассировок, ни Session Replay), не создаётся фильтр guard'а, не подписывается слушатель `app:chunk-reload-blocked`, нет хуков `app:error` / `vue:error`;
+- ранний inline-beacon не подписывается ни на одно событие: не уходят ни `unsupported-browser`, ни `retry-failed`, ни watchdog `app:load-timeout`. Цена: о мёртвой загрузке такой страницы Sentry не узнает — её источник тот же beacon;
+- stale-deploy-guard от опции не зависит: его экраны и перезагрузки работают, как работали, а события он диспатчит как обычно — их на таком документе просто никто не слушает.
+
+Гейт попадает в inline-скрипт только при непустом списке (≈ +0,2 КБ, ≈ +0,1 КБ gz); без опции текст скрипта байт в байт прежний, а плагин делает одну проверку в самом начале (пустой список не совпадает ни с чем).
+
+Опция появилась в 0.14.0 и пару версий не меняет: guard ≥ 0.8.0 по-прежнему идёт с nuxt-sentry ≥ 0.13.0 (см. «Версии идут парой» выше). От версии guard она не зависит.
 
 ## Тесты
 

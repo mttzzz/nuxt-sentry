@@ -2,13 +2,14 @@ import * as Sentry from '@sentry/vue'
 
 import { defineNuxtPlugin, useRouter, useRuntimeConfig } from '#app'
 // @ts-expect-error virtual module emitted by module.ts via addTemplate + alias
-import { additionalIgnorePatterns, tracePropagationTargets } from '#nuxt-sentry/config'
+import { additionalIgnorePatterns, disabledRoutes, tracePropagationTargets } from '#nuxt-sentry/config'
 // @ts-expect-error virtual module: реэкспорт utils/session-replay либо no-op при `sentry.replay: false`
 import { loadSessionReplay } from '#nuxt-sentry/replay'
 
 import { createClientBeforeSend } from './utils/before-send'
 import { listenChunkReloadBlocked } from './utils/chunk-reload-report'
 import { buildIgnoreErrors } from './utils/ignore-errors'
+import { createRouteMatcher } from './utils/route-patterns'
 import { shouldEnableClientSentry } from './utils/sentry-enabled'
 
 /*
@@ -40,9 +41,20 @@ import { shouldEnableClientSentry } from './utils/sentry-enabled'
  * первую навигацию раньше этого плагина, SDK к событию может быть не поднят, поэтому его тоже шлёт
  * только ранний beacon — при поднятом SDK второй отправитель дал бы дубль. Событие watchdog'а
  * (`app:load-timeout`, guard ≥ 0.7.0) плагин не слушает вовсе — его шлёт только ранний beacon.
+ *
+ * Документ, открытый на пути из `client.disabledRoutes` (публичные страницы, окружение которых не починить), плагин
+ * пропускает целиком: `return` до всего остального — ни Sentry.init, ни импорта фильтра guard'а, ни replay, ни
+ * слушателя `app:chunk-reload-blocked`, ни хуков `app:error` / `vue:error`. Решение одно на ДОКУМЕНТ, по
+ * `location.pathname` на момент старта плагина; переход внутри SPA его не меняет. Тот же список, по тем же правилам
+ * (route-patterns.ts), применяет ранний beacon (early-beacon.ts). Серверный Sentry не затрагивается.
  */
 
 export default defineNuxtPlugin(async (nuxtApp) => {
+  /* Документ на отключённом маршруте: ничего не поднимаем, даже импорт guard'а ниже (см. шапку файла). */
+  if (createRouteMatcher(disabledRoutes as string[])(globalThis.location.pathname)) {
+    return
+  }
+
   // Динамический импорт чтобы peer (stale-deploy-guard) не превращался в hard-dep на этапе compile.
   const { createSentryStaleChunkFilter } = await import('@mttzzz/nuxt-stale-deploy-guard/sentry')
 

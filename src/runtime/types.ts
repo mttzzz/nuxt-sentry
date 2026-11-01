@@ -51,6 +51,27 @@ export interface ModuleOptions {
    * в Sentry (страховка от прод-Sentry-noise из test-image'ов). Default: true.
    */
   excludeLocalhostInProd?: boolean
+  /**
+   * Клиентский (браузерный) Sentry. Серверный не затрагивается.
+   */
+  client?: {
+    /**
+     * Паттерны путей, на которых клиентский Sentry не работает вовсе: документ, открытый на таком пути, не вызывает
+     * `Sentry.init`, не подписывается на события guard'а и не шлёт отчёты раннего inline-beacon'а. Для публичных
+     * страниц, окружение которых не починить (встроенные браузеры, кошельки, приватный режим, плохая сеть) и где
+     * сигнал из браузера не приводит к правке.
+     *
+     * Синтаксис (как routeRules Nitro, только целыми сегментами): `/clients` — ровно этот путь; `*` — один непустой
+     * сегмент (`/clients/*`); `/**` в конце — префикс и всё под ним (`/clients/**` совпадает с `/clients`,
+     * `/clients/abc`, `/clients/a/b`, но не с `/clientsx`). Сверка — с `location.pathname`, с учётом регистра;
+     * `*` и `**` внутри сегмента или `**` не в конце бросают ошибку при setup модуля (сборка и старт dev).
+     *
+     * Решение принимается один раз на ДОКУМЕНТ, по адресу, с которым он загружен: переход внутри SPA его не меняет —
+     * документ, открытый на странице персонала, продолжает слать отчёты и после перехода на отключённый путь, а
+     * документ, открытый на отключённом пути, не шлёт никогда. Default: [].
+     */
+    disabledRoutes?: string[]
+  }
   /*
    * Path к модулю с default export-функцией:
    *   filter(error) → boolean — return false → событие НЕ шлётся в Sentry.
@@ -87,6 +108,7 @@ export interface ResolvedModuleOptions {
   additionalIgnorePatterns: (string | RegExp)[]
   ignoredRoutes: string[]
   excludeLocalhostInProd: boolean
+  client: { disabledRoutes: string[] }
   errorReportFilter?: string
   errorReportEnricher?: string
 }

@@ -5,6 +5,7 @@ export interface EarlyBeaconOptions {
     tunnelEndpoint: string;
     release: string | undefined;
     excludeLocalhostInProd: boolean;
+    disabledRoutes?: readonly string[];
     version: string;
 }
 export declare function buildEarlyBeaconScript(options: EarlyBeaconOptions): string;

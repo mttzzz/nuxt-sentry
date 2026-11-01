@@ -35,6 +35,7 @@ type WindowListener = (event: { type: string; detail?: unknown }) => void
 export interface PageEnv {
   hostname?: string
   href?: string
+  pathname?: string
   sendBeacon?: BeaconFn | null
   fetch?: FetchFn | null
   crypto?: null
@@ -66,9 +67,11 @@ export function boot(options: Partial<EarlyBeaconOptions> = {}, env: PageEnv = {
   if (env.sendBeacon !== null) {
     navigator.sendBeacon = sendBeacon
   }
+  const href = env.href ?? PAGE
   const win: Record<string, unknown> = {
     navigator,
-    location: { hostname: env.hostname ?? 'ai.pushka.biz', href: env.href ?? PAGE },
+    /* Pathname — как у настоящего location: путь из href без query и hash; env.pathname подменяет его целиком. */
+    location: { hostname: env.hostname ?? 'ai.pushka.biz', href, pathname: env.pathname ?? new URL(href).pathname },
     addEventListener(type: string, listener: WindowListener) {
       if (type === 'app:chunk-reload-blocked') {
         listeners.push(listener)

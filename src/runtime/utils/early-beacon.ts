@@ -10,6 +10,7 @@ import {
   LOAD_TIMEOUT_MESSAGE_PREFIX,
   LOAD_TIMEOUT_MESSAGE_SUFFIX,
 } from './load-timeout-report'
+import { routePatternToRegExpSource } from './route-patterns'
 import { LOCAL_HOSTS } from './sentry-enabled'
 
 /*
@@ -60,8 +61,14 @@ import { LOCAL_HOSTS } from './sentry-enabled'
  * Отправка — navigator.sendBeacon, фолбэк — fetch с keepalive, когда sendBeacon нет, вернул false (очередь
  * отклонена) или бросил. У unsupported-browser запрос начинается уже после window.stop() (порядок guard), поэтому
  * остановка его не касается; keepalive переживает и выгрузку страницы.
- * Выключен там же, где клиентский SDK: localhost при excludeLocalhostInProd (shouldEnableClientSentry);
- * сам модуль добавляет скрипт только в production-сборке.
+ * Выключен там же, где клиентский SDK: localhost при excludeLocalhostInProd (shouldEnableClientSentry) и документ,
+ * чей путь подпал под `client.disabledRoutes`; сам модуль добавляет скрипт только в production-сборке.
+ *
+ * `disabledRoutes` — паттерны путей (route-patterns.ts): при сборке они компилируются в источники RegExp и вшиваются в
+ * конфиг скрипта, а на документе, у которого `location.pathname` совпал с любым из них, скрипт не подписывается ни на
+ * одно событие — отчёта не будет ни от `unsupported-browser`, ни от `retry-failed`, ни от watchdog'а. Решение одно на
+ * документ и принимается при исполнении скрипта, по адресу ДОКУМЕНТА (SPA-навигация его не меняет) — так же, как у
+ * клиентского плагина. Гейт попадает в текст только при непустом списке: без опции скрипт побайтно прежний.
  */
 
 export const EARLY_BEACON_HEAD_KEY = 'nuxt-sentry-early-beacon'
@@ -72,6 +79,8 @@ export interface EarlyBeaconOptions {
   tunnelEndpoint: string
   release: string | undefined
   excludeLocalhostInProd: boolean
+  /* Паттерны путей (route-patterns.ts), на документе с таким `location.pathname` скрипт молчит. Пусто — гейта нет. */
+  disabledRoutes?: readonly string[]
   /* Версия пакета — уходит в sdk.version события. */
   version: string
 }
@@ -88,8 +97,21 @@ function toScriptLiteral(value: unknown): string {
   )
 }
 
+/*
+ * Гейт «документ на отключённом маршруте»: вставляется в скрипт только при непустом `disabledRoutes`. Стоит сразу
+ * после гейта localhost и до подписки на события: на таком документе слушателей нет вовсе. Тело — ES5 и ASCII.
+ */
+const DISABLED_ROUTES_GATE = String.raw`
+  if (
+    c.disabledRoutes.some(function (s) {
+      return new RegExp(s).test(loc.pathname);
+    })
+  ) {
+    return;
+  }`
+
 /* Тело: ES5. Внутри нельзя ни обратные кавычки, ни `${`. */
-function scriptSource(configLiteral: string): string {
+function scriptSource(configLiteral: string, disabledRoutesGate: string): string {
   return String.raw`(function (w) {
   var c = ${configLiteral};
   var nav = w.navigator;
@@ -337,7 +359,7 @@ function scriptSource(configLiteral: string): string {
   }
   if (c.skipLocalhost && c.localHosts.indexOf(loc.hostname) !== -1) {
     return;
-  }
+  }${disabledRoutesGate}
   w.addEventListener('app:chunk-reload-blocked', function (e) {
     var d = e && e.detail;
     var t = d ? pick(d) : null;
@@ -363,6 +385,9 @@ function scriptSource(configLiteral: string): string {
 }
 
 export function buildEarlyBeaconScript(options: EarlyBeaconOptions): string {
+  /* Источники RegExp (route-patterns.ts) готовятся при сборке: ES5-скрипту остаётся `new RegExp(source).test(path)`. */
+  const disabledRoutes = (options.disabledRoutes ?? []).map((pattern) => routePatternToRegExpSource(pattern))
+  const hasDisabledRoutes = disabledRoutes.length > 0
   return scriptSource(
     toScriptLiteral({
       dsn: options.dsn,
@@ -370,6 +395,8 @@ export function buildEarlyBeaconScript(options: EarlyBeaconOptions): string {
       release: options.release,
       skipLocalhost: options.excludeLocalhostInProd,
       localHosts: [...LOCAL_HOSTS],
+      /* Ключ только при непустом списке: без опции и конфиг, и текст скрипта побайтно прежние. */
+      ...(hasDisabledRoutes ? { disabledRoutes } : {}),
       sdk: { name: EARLY_BEACON_SDK_NAME, version: options.version },
       events: [
         {
@@ -396,5 +423,6 @@ export function buildEarlyBeaconScript(options: EarlyBeaconOptions): string {
         fingerprint: LOAD_TIMEOUT_FINGERPRINT,
       },
     }),
+    hasDisabledRoutes ? DISABLED_ROUTES_GATE : '',
   )
 }

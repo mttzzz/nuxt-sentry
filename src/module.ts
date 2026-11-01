@@ -14,6 +14,7 @@ import { version } from '../package.json'
 import { buildReplayTemplate, buildVirtualReexport, resolveSourcePath, serializeBuildLiteral } from './build-helpers'
 import type { ModuleOptions, PublicRuntimeSentryConfig, ResolvedModuleOptions } from './runtime/types'
 import { EARLY_BEACON_HEAD_KEY, buildEarlyBeaconScript } from './runtime/utils/early-beacon'
+import { createRouteMatcher } from './runtime/utils/route-patterns'
 import { buildTunnelIngestUrl } from './runtime/utils/tunnel-ingest-url'
 import { stripServerSourcemaps } from './strip-server-sourcemaps'
 
@@ -31,6 +32,7 @@ const DEFAULTS = {
   additionalIgnorePatterns: [] as (string | RegExp)[],
   ignoredRoutes: ['/api/sentry-tunnel', '/_nuxt', '/api/ws', '/api/health', '/__nuxt_error'],
   excludeLocalhostInProd: true,
+  clientDisabledRoutes: [] as string[],
 }
 
 export default defineNuxtModule<ModuleOptions>({
@@ -109,7 +111,15 @@ export default defineNuxtModule<ModuleOptions>({
       additionalIgnorePatterns: opts.additionalIgnorePatterns ?? DEFAULTS.additionalIgnorePatterns,
       ignoredRoutes: opts.ignoredRoutes ?? DEFAULTS.ignoredRoutes,
       excludeLocalhostInProd: opts.excludeLocalhostInProd ?? DEFAULTS.excludeLocalhostInProd,
+      client: { disabledRoutes: opts.client?.disabledRoutes ?? DEFAULTS.clientDisabledRoutes },
     }
+
+    /*
+     * Паттерны client.disabledRoutes разбираются сразу и в любом режиме: в dev скрипта beacon нет, и опечатка
+     * (`*` внутри сегмента, `**` не в конце) иначе всплыла бы только в браузере — при старте клиентского плагина.
+     * Матчер здесь не нужен, нужна ошибка разбора: она падает на setup, как и обязательные опции выше.
+     */
+    createRouteMatcher(resolved.client.disabledRoutes)
 
     const tunnelIngestUrl = buildTunnelIngestUrl(resolved.dsn)
 
@@ -143,7 +153,7 @@ export default defineNuxtModule<ModuleOptions>({
 
     /*
      * Build-time значения (DSN, cachePrefix, tunnelIngestUrl, tracePropagationTargets с RegExp'ами,
-     * additionalIgnorePatterns) пишем в виртуальный модуль через `addTemplate`. Vite `define` /
+     * additionalIgnorePatterns, disabledRoutes) пишем в виртуальный модуль через `addTemplate`. Vite `define` /
      * Nitro `replace` не поддерживают array-literals (и тем более RegExp), а runtimeConfig
      * не сериализует RegExp. Темплейт компилится в `.nuxt/nuxt-sentry-build-config.mjs`,
      * импортируется как `#build/nuxt-sentry-build-config` из server и client рантаймов.
@@ -161,6 +171,7 @@ export default defineNuxtModule<ModuleOptions>({
           `export const ignoredRoutes = ${serializeBuildLiteral(resolved.ignoredRoutes)}`,
           `export const tracePropagationTargets = ${serializeBuildLiteral(resolved.tracePropagationTargets)}`,
           `export const additionalIgnorePatterns = ${serializeBuildLiteral(resolved.additionalIgnorePatterns)}`,
+          `export const disabledRoutes = ${serializeBuildLiteral(resolved.client.disabledRoutes)}`,
           '',
         ].join('\n'),
     })
@@ -266,7 +277,8 @@ export default defineNuxtModule<ModuleOptions>({
      * runtime/utils/early-beacon.ts. Позиция head — раньше bodyClose-скрипта stale-deploy-guard, который
      * диспатчит `app:chunk-reload-blocked`, и раньше entry: слушатель должен быть зарегистрирован до
      * того, как приложение что-то dispatch'ит. Только в production-сборке: в dev Sentry выключен, а guard
-     * экран-заглушку не ставит. DSN/tunnel/release вшиваются при сборке.
+     * экран-заглушку не ставит. DSN/tunnel/release вшиваются при сборке; там же `client.disabledRoutes` — документ на
+     * таком пути скрипт не слушает вовсе (тот же список, что у клиентского плагина).
      */
     if (!nuxt.options.dev) {
       nuxt.options.app.head.script ??= []
@@ -278,6 +290,7 @@ export default defineNuxtModule<ModuleOptions>({
           tunnelEndpoint: resolved.tunnelEndpoint,
           release,
           excludeLocalhostInProd: resolved.excludeLocalhostInProd,
+          disabledRoutes: resolved.client.disabledRoutes,
           version,
         }),
       })

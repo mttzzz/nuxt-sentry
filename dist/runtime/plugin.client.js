@@ -1,12 +1,16 @@
 import * as Sentry from "@sentry/vue";
 import { defineNuxtPlugin, useRouter, useRuntimeConfig } from "#app";
-import { additionalIgnorePatterns, tracePropagationTargets } from "#nuxt-sentry/config";
+import { additionalIgnorePatterns, disabledRoutes, tracePropagationTargets } from "#nuxt-sentry/config";
 import { loadSessionReplay } from "#nuxt-sentry/replay";
 import { createClientBeforeSend } from "./utils/before-send.js";
 import { listenChunkReloadBlocked } from "./utils/chunk-reload-report.js";
 import { buildIgnoreErrors } from "./utils/ignore-errors.js";
+import { createRouteMatcher } from "./utils/route-patterns.js";
 import { shouldEnableClientSentry } from "./utils/sentry-enabled.js";
 export default defineNuxtPlugin(async (nuxtApp) => {
+  if (createRouteMatcher(disabledRoutes)(globalThis.location.pathname)) {
+    return;
+  }
   const { createSentryStaleChunkFilter } = await import("@mttzzz/nuxt-stale-deploy-guard/sentry");
   const config = useRuntimeConfig().public.sentry;
   const router = useRouter();
