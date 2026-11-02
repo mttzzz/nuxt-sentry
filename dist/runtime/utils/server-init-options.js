@@ -2,7 +2,7 @@ import * as Sentry from "@sentry/bun";
 import { isNoiseEvent, normalizeConsoleEvent, normalizeMessageEvent } from "./before-send.js";
 import { DATA_COLLECTION } from "./data-collection.js";
 import { createTracesSampler } from "./traces-sampler.js";
-const DROPPED_DEFAULT_INTEGRATIONS = { Fetch: true, Dedupe: true };
+const DROPPED_DEFAULT_INTEGRATIONS = { Fetch: true, Dedupe: true, NodeSystemError: true };
 export function buildServerIntegrations(defaults, cachePrefix) {
   return [
     ...defaults.filter(({ name }) => !Object.hasOwn(DROPPED_DEFAULT_INTEGRATIONS, name)),

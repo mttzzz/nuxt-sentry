@@ -22,6 +22,7 @@ interface TrafficEvent {
   message?: string
   exception?: { values?: { value?: string; mechanism?: { type?: string }; stacktrace?: { frames?: unknown[] } }[] }
   threads?: unknown
+  contexts?: Record<string, unknown>
   request?: {
     url?: string
     headers?: Record<string, string>
@@ -114,6 +115,7 @@ describe('серверный Sentry: итоговая конфигурация �
   it('интеграции: новые умолчания 11 с побочными эффектами сняты, нужные на месте', () => {
     expect(traffic.config.integrations).not.toContain('Fetch')
     expect(traffic.config.integrations).not.toContain('Dedupe')
+    expect(traffic.config.integrations).not.toContain('NodeSystemError')
     expect(traffic.config.integrations).toEqual(
       expect.arrayContaining([
         'BunServer',
@@ -152,6 +154,15 @@ describe('серверный Sentry: события уходят, как на 10
   it('дедуп отключён: три подряд одинаковых console.error — три события (на 10.x сервер дедупа не имел)', () => {
     const duplicates = events.filter((event) => event.exception?.values?.some((entry) => entry.value === 'dup-same'))
     expect(duplicates).toHaveLength(3)
+  })
+
+  it('системная ошибка (ENOENT): путь остаётся в заголовке, как на 10.x, и contexts.node_system_error не добавляется', () => {
+    const entry = events
+      .flatMap((event) => (event.exception?.values ?? []).map((value) => ({ event, value })))
+      .find(({ value }) => value.value?.includes('no such file or directory'))
+    expect(entry, 'событие ENOENT не дошло до ловушки').toBeDefined()
+    expect(entry?.value.value).toContain("'/definitely/missing/traffic-file.txt'")
+    expect(entry?.event.contexts).not.toHaveProperty('node_system_error')
   })
 
   it('id, email и IP пользователя из plugin-user-context на месте (user.ip_address и из X-Forwarded-For SDK)', () => {

@@ -16,7 +16,7 @@ import type { ModuleOptions, PublicRuntimeSentryConfig, ResolvedModuleOptions } 
 import { EARLY_BEACON_HEAD_KEY, buildEarlyBeaconScript } from './runtime/utils/early-beacon'
 import { createRouteMatcher } from './runtime/utils/route-patterns'
 import { buildTunnelIngestUrl } from './runtime/utils/tunnel-ingest-url'
-import { stripServerSourcemaps } from './strip-server-sourcemaps'
+import { stripPublicSourcemaps, stripServerSourcemaps } from './strip-sourcemaps'
 
 export type { ModuleOptions } from './runtime/types'
 
@@ -302,6 +302,13 @@ export default defineNuxtModule<ModuleOptions>({
      * не подключаем чтобы лишний раз не шуметь варнингами.
      */
     if (process.env.NODE_ENV === 'production' && process.env.SENTRY_AUTH_TOKEN) {
+      /*
+       * Плагин 11 исполняет npm-CLI `sentry` внутри своего процесса (release, set-commits, deploy, загрузка карт), и CLI шлёт
+       * СВОЮ телеметрию: транзакцию `cli.command` на каждую команду, с тегами sentry.org/sentry.project, на
+       * o1.ingest.us.sentry.io. `telemetry: false` плагина гасит только телеметрию самого плагина. Выключатель CLI —
+       * переменная окружения, и ставить её надо ДО запуска плагина; явное значение пользователя (в том числе '0') не трогаем.
+       */
+      process.env.SENTRY_CLI_NO_TELEMETRY ??= '1'
       nuxt.options.vite.plugins ??= []
       const plugins = Array.isArray(nuxt.options.vite.plugins) ? nuxt.options.vite.plugins : [nuxt.options.vite.plugins]
       plugins.push(
@@ -325,20 +332,24 @@ export default defineNuxtModule<ModuleOptions>({
                 },
               }
             : {}),
-          sourcemaps: {
-            /* Карты нужны Sentry на аплоаде, а не рантайму: под запускается без
-             * --enable-source-maps, читать их некому. Серверные раньше оставались в образе —
-             * у ai.pushka.biz это 51 MB из 178 MB слоя .output, то есть почти треть байтов,
-             * которые каждый деплой уезжают в реестр (замер 13.08: пуш слоёв 28–260 s в
-             * зависимости от настроения DOCR). Удаляем все после загрузки. */
-            filesToDeleteAfterUpload: ['.output/**/*.map'],
-          },
         }),
       )
       nuxt.options.vite.plugins = plugins
+
+      /*
+       * Карты нужны Sentry на загрузке, а не рантайму: под стартует без --enable-source-maps, браузер их не запрашивает
+       * (client.sourcemap — 'hidden'). Плагин сам их не удаляет: его `filesToDeleteAfterUpload` (глоб `.output/**\/*.map`)
+       * срабатывает в `writeBundle` клиентской сборки Vite, когда `.output/public` ещё не существует — Nitro копирует
+       * клиентскую сборку позже, — и ничего не находил: все карты уезжали в образ и на CDN. Поэтому чистим публичный каталог
+       * Nitro сразу после копирования, до манифеста публичных ассетов; загрузка в Sentry к этому моменту завершена.
+       * Подробности — strip-sourcemaps.ts.
+       */
+      nuxt.hook('nitro:build:public-assets', async (nitro) => {
+        await stripPublicSourcemaps(nitro.options.output.publicDir)
+      })
     }
 
-    /* Серверные карты — мёртвый груз в образе; подробности в strip-server-sourcemaps.ts. */
+    /* Серверные карты — мёртвый груз в образе; подробности в strip-sourcemaps.ts. */
     nuxt.hook('nitro:init', (nitro) => {
       if (process.env.NODE_ENV !== 'production') {
         return

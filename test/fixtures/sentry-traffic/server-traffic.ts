@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs'
 import { createServer, request as httpRequest } from 'node:http'
 
 /*
@@ -188,6 +189,15 @@ const app = Bun.serve({
       await callInnerNodeHttpServer()
       return new Response('inner')
     }
+    if (url.pathname === '/enoent') {
+      /* Настоящая системная ошибка Node/Bun (errno + path): так её видит systemErrorIntegration, если она включена. */
+      try {
+        readFileSync('/definitely/missing/traffic-file.txt')
+      } catch (error) {
+        Sentry.captureException(error)
+      }
+      return new Response('enoent')
+    }
     return new Response('not found', { status: 404 })
   },
 })
@@ -211,6 +221,7 @@ await (await fetch(`${base}/throw`, { headers: clientHeaders })).text()
 await (await fetch(`${base}/log`, { headers: clientHeaders })).text()
 await (await fetch(`${base}/dup`, { headers: clientHeaders })).text()
 await (await fetch(`${base}/inner`, { headers: clientHeaders })).text()
+await (await fetch(`${base}/enoent`, { headers: clientHeaders })).text()
 /* OPTIONS — отдельный путь Bun-интеграции: ошибки в нём ловятся, но сессия не стартует. */
 await (await fetch(`${base}/echo`, { method: 'OPTIONS', headers: clientHeaders })).text()
 

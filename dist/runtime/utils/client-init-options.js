@@ -29,6 +29,7 @@ export function buildClientSentryOptions(input) {
     beforeSend: input.beforeSend,
     tracePropagationTargets: input.tracePropagationTargets,
     ignoreSpans: CLIENT_IGNORE_SPANS,
+    enhanceFetchErrorMessages: "report-only",
     debug: false,
     integrations: [
       Sentry.browserTracingIntegration({ router: input.router }),
