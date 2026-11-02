@@ -1,6 +1,7 @@
 import * as Sentry from "@sentry/bun";
 import { isNoiseEvent, normalizeConsoleEvent, normalizeMessageEvent } from "./before-send.js";
 import { DATA_COLLECTION } from "./data-collection.js";
+import { otelEventTraceIntegration } from "./otel-event-trace.js";
 import { createTracesSampler } from "./traces-sampler.js";
 const DROPPED_DEFAULT_INTEGRATIONS = { Fetch: true, Dedupe: true, NodeSystemError: true };
 export function buildServerIntegrations(defaults, cachePrefix) {
@@ -12,7 +13,9 @@ export function buildServerIntegrations(defaults, cachePrefix) {
     Sentry.bunHttpServerIntegration({ maxRequestBodySize: "none", sessions: false }),
     Sentry.redisIntegration({ cachePrefixes: [cachePrefix] }),
     /* Issues-first: серверный console.warn/error → Issue (через createLogger или сырой). */
-    Sentry.captureConsoleIntegration({ levels: ["warn", "error"] })
+    Sentry.captureConsoleIntegration({ levels: ["warn", "error"] }),
+    /* Событие внутри активного OTel-спана — с его trace_id/span_id (на 11 их перекрывал спан самого Sentry). */
+    otelEventTraceIntegration()
   ];
 }
 function serverBeforeSend(event) {

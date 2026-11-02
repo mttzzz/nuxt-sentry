@@ -4,6 +4,7 @@ import type { Event, Integration } from '@sentry/core'
 
 import { isNoiseEvent, normalizeConsoleEvent, normalizeMessageEvent } from './before-send'
 import { DATA_COLLECTION } from './data-collection'
+import { otelEventTraceIntegration } from './otel-event-trace'
 import { createTracesSampler } from './traces-sampler'
 
 /*
@@ -31,6 +32,10 @@ import { createTracesSampler } from './traces-sampler'
  *   - runtime-инжект диагностических каналов → enableRuntimeChannelInjection: false: на Bun 1.4.4 он
  *                                          неактивен (нет Module.registerHooks), но Bun выдаёт версию Node 26 —
  *                                          с появлением registerHooks SDK начал бы патчить модули сам.
+ *   - trace_id событий в OTel-спане      → интеграция OtelEventTrace (utils/otel-event-trace.ts): событие внутри
+ *                                          активного OTel-спана стороннего провайдера (chassis ядра) несёт его
+ *                                          trace_id и span_id, как на 10.x (@sentry/opentelemetry); на 11 без неё —
+ *                                          trace браузера (sentry-trace) или http.server-спана Sentry;
  * Прочие новые умолчания 11 оставлены: conversationIdIntegration и error-интеграции фреймворков инертны без своих
  * фреймворков.
  */
@@ -62,6 +67,8 @@ export function buildServerIntegrations(defaults: Integration[], cachePrefix: st
     Sentry.redisIntegration({ cachePrefixes: [cachePrefix] }),
     /* Issues-first: серверный console.warn/error → Issue (через createLogger или сырой). */
     Sentry.captureConsoleIntegration({ levels: ['warn', 'error'] }),
+    /* Событие внутри активного OTel-спана — с его trace_id/span_id (на 11 их перекрывал спан самого Sentry). */
+    otelEventTraceIntegration(),
   ]
 }
 
