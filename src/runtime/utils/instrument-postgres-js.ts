@@ -1,15 +1,16 @@
 /*
  * Portable instrumentation для postgres-js (npm `postgres`).
  *
- * Зачем не `Sentry.postgresJsIntegration()`: OTEL-based интеграции Sentry'я
- * патчат модули через `import-in-the-middle` / `require-in-the-middle`. На Bun
- * import-in-the-middle сломан (см. https://github.com/getsentry/sentry-javascript/issues/14202)
- * — реальный wrap никогда не срабатывает, db-спанов нет. Плюс Nitro бандлит
- * `postgres` в один файл — даже на Node патчить нечего.
+ * Зачем не `Sentry.postgresJsIntegration()`: она подписана на диагностические каналы, которые
+ * публикует либо runtime-инжект Sentry (Module.registerHooks — в Bun 1.4 его нет), либо сборка с
+ * orchestrion-плагином; Nitro бандлит `postgres` в один файл, и у автоматического патча нет модуля,
+ * который можно подменить. Каналы `postgres:query|connect|transaction` у postgres 4.x Sentry 11.10 не
+ * использует. На 10.x к тому же не работал import-in-the-middle под Bun
+ * (https://github.com/getsentry/sentry-javascript/issues/14202) — db-спанов не было вовсе.
  *
- * Решение: `Sentry.instrumentPostgresJsSql` — официальная portable-обёртка
- * из `@sentry/core` (используется внутри cloudflare/deno SDK). Патчит уже
- * созданный sql-инстанс через JS Proxy, не зависит от модульных хуков.
+ * Решение: `Sentry.instrumentPostgresJsSql` — portable-обёртка, которую `@sentry/bun` реэкспортирует
+ * с 11.10.0 (до этого она жила только в `@sentry/server-utils`, а на 10.x — в `@sentry/core`). Патчит
+ * уже созданный sql-инстанс через JS Proxy, не зависит от модульных хуков.
  *
  * Применение (в `server/db/client.ts` консьюмера):
  *   import postgres from 'postgres'
@@ -29,7 +30,7 @@
  *     прозрачно отдаёт оригинальный объект, мутация попадает в исходный sql
  */
 
-import { instrumentPostgresJsSql } from '@sentry/core'
+import { instrumentPostgresJsSql } from '@sentry/bun'
 
 export interface InstrumentPostgresJsOptions {
   /**

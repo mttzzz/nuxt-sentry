@@ -4,6 +4,7 @@ import { additionalIgnorePatterns, disabledRoutes, tracePropagationTargets } fro
 import { loadSessionReplay } from "#nuxt-sentry/replay";
 import { createClientBeforeSend } from "./utils/before-send.js";
 import { listenChunkReloadBlocked } from "./utils/chunk-reload-report.js";
+import { buildClientSentryOptions } from "./utils/client-init-options.js";
 import { buildIgnoreErrors } from "./utils/ignore-errors.js";
 import { createRouteMatcher } from "./utils/route-patterns.js";
 import { shouldEnableClientSentry } from "./utils/sentry-enabled.js";
@@ -17,43 +18,27 @@ export default defineNuxtPlugin(async (nuxtApp) => {
   const extraIgnore = additionalIgnorePatterns;
   const staleChunkFilter = createSentryStaleChunkFilter();
   Error.stackTraceLimit = 50;
-  Sentry.init({
-    app: nuxtApp.vueApp,
-    dsn: config.dsn,
-    release: config.release,
-    tunnel: config.tunnelEndpoint,
-    enabled: shouldEnableClientSentry({
-      // oxlint-disable-next-line typescript/no-unsafe-assignment, typescript/no-unsafe-member-access -- import.meta.env is virtual module, typed as error but safe at runtime
-      isProd: import.meta.env.PROD,
-      hostname: globalThis.location.hostname,
-      excludeLocalhost: config.excludeLocalhostInProd
-    }),
-    tracesSampleRate: config.tracesSampleRate,
-    replaysSessionSampleRate: config.replaysSessionSampleRate,
-    replaysOnErrorSampleRate: config.replaysOnErrorSampleRate ?? 1,
-    enableLogs: false,
-    sendDefaultPii: true,
-    attachStacktrace: true,
-    normalizeDepth: 8,
-    maxValueLength: 2e3,
-    ignoreErrors: buildIgnoreErrors(extraIgnore),
-    beforeSend: createClientBeforeSend(staleChunkFilter),
-    tracePropagationTargets,
-    ignoreSpans: [
-      { op: /^browser\.(cache|connect|DNS)$/u },
-      { op: "resource.other", name: /.+\.(woff2|woff|ttf|eot)$/u },
-      { op: "resource.link", name: /.+\.css.*$/u },
-      { op: /resource\.(link|script)/u, name: /.+\.js.*$/u },
-      { op: /resource\.(other|img)/u, name: /.+\.(png|svg|jpeg|jpg|gif|bmp|tif|tiff|webp|avif|heic|heif|ico).*$/u },
-      { op: "measure" }
-    ],
-    debug: false,
-    integrations: [
-      Sentry.browserTracingIntegration({ router }),
-      Sentry.vueIntegration({ app: nuxtApp.vueApp, attachErrorHandler: false }),
-      Sentry.captureConsoleIntegration({ levels: ["warn", "error"] })
-    ]
-  });
+  Sentry.init(
+    buildClientSentryOptions({
+      app: nuxtApp.vueApp,
+      router,
+      dsn: config.dsn,
+      release: config.release,
+      tunnel: config.tunnelEndpoint,
+      enabled: shouldEnableClientSentry({
+        // oxlint-disable-next-line typescript/no-unsafe-assignment, typescript/no-unsafe-member-access -- import.meta.env is virtual module, typed as error but safe at runtime
+        isProd: import.meta.env.PROD,
+        hostname: globalThis.location.hostname,
+        excludeLocalhost: config.excludeLocalhostInProd
+      }),
+      tracesSampleRate: config.tracesSampleRate,
+      replaysSessionSampleRate: config.replaysSessionSampleRate,
+      replaysOnErrorSampleRate: config.replaysOnErrorSampleRate ?? 1,
+      ignoreErrors: buildIgnoreErrors(extraIgnore),
+      beforeSend: createClientBeforeSend(staleChunkFilter),
+      tracePropagationTargets
+    })
+  );
   void loadSessionReplay();
   listenChunkReloadBlocked((event) => {
     Sentry.captureEvent(event);

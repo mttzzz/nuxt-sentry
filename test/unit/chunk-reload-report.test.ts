@@ -1,5 +1,6 @@
 import { createSentryStaleChunkFilter } from '@mttzzz/nuxt-stale-deploy-guard/sentry'
-import { Scope, ServerRuntimeClient, createTransport, eventFiltersIntegration, type Event } from '@sentry/core'
+import { Scope, createTransport, eventFiltersIntegration, type Event } from '@sentry/core'
+import { ServerRuntimeClient } from '@sentry/core/server'
 import { describe, expect, it, vi } from 'vitest'
 
 import { createClientBeforeSend } from '../../src/runtime/utils/before-send'

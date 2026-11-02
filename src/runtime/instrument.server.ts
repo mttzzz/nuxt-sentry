@@ -8,17 +8,18 @@
  * (см. src/module.ts). НЕ импортируем их через alias — instrument грузится
  * раньше index.mjs, импорт оттуда → TDZ.
  *
+ * Сами опции собирает utils/server-init-options.ts (чистая функция: итоговая конфигурация
+ * проверяется в тестах настоящим SDK; здесь остаются только плейсхолдеры и побочные эффекты).
+ *
  * DB-инструментация (postgres-js) выполняется НЕ здесь, а ручным вызовом
- * `instrumentPostgresJs(client)` в `server/db/client.ts` консьюмера. Причина:
- * OTEL-инструментация Sentry'я полагается на `import-in-the-middle`, который
- * сломан на Bun — db-спаны не создаются. Подробнее: runtime/utils/instrument-postgres-js.ts.
+ * `instrumentPostgresJs(client)` в `server/db/client.ts` консьюмера: Nitro бандлит `postgres`
+ * в один файл, и автоматическому патчу модуля там нечего подменять. Подробнее: runtime/utils/instrument-postgres-js.ts.
  */
 
 import * as Sentry from '@sentry/bun'
 
-import { isNoiseEvent, normalizeConsoleEvent, normalizeMessageEvent } from './utils/before-send'
 import { shouldEnableServerSentry } from './utils/sentry-enabled'
-import { createTracesSampler } from './utils/traces-sampler'
+import { buildServerSentryOptions } from './utils/server-init-options'
 
 /* Volatile env read через globalThis — обход Rollup constant-folding.
    `bun nuxt build` запускается с NODE_ENV=production, и плоский `process.env.NODE_ENV`
@@ -46,42 +47,17 @@ declare const __NUXT_SENTRY_RELEASE__: string | undefined
  * (ai.pushka.biz AI-PUSHKA-BIZ-5J). 50 кадров — с запасом на async_hooks и вложенные обёртки. */
 Error.stackTraceLimit = 50
 
-Sentry.init({
-  dsn: __NUXT_SENTRY_DSN__,
-  release: __NUXT_SENTRY_RELEASE__,
-
-  enabled: shouldEnableServerSentry({
-    nodeEnv: readEnvVolatile('NODE_ENV'),
-    sentryDisabled: readEnvVolatile('SENTRY_DISABLED'),
-  }),
-
-  integrations: [
-    /* Explicitly keep Bun HTTP transactions even if SDK defaults change. */
-    Sentry.bunServerIntegration(),
-    Sentry.redisIntegration({
-      cachePrefixes: [__NUXT_SENTRY_CACHE_PREFIX__],
+Sentry.init(
+  buildServerSentryOptions({
+    dsn: __NUXT_SENTRY_DSN__,
+    release: __NUXT_SENTRY_RELEASE__,
+    enabled: shouldEnableServerSentry({
+      nodeEnv: readEnvVolatile('NODE_ENV'),
+      sentryDisabled: readEnvVolatile('SENTRY_DISABLED'),
     }),
-    /* Issues-first: серверный console.warn/error → Issue (через createLogger или сырой). */
-    Sentry.captureConsoleIntegration({ levels: ['warn', 'error'] }),
-  ],
-
-  /* Какие корневые спаны становятся транзакциями — utils/traces-sampler.ts (чистая фабрика, покрыта
-     юнитами). Плейсхолдеры остаются тут: renderChunk подставляет их только в коде этого чанка. */
-  tracesSampler: createTracesSampler({
+    cachePrefix: __NUXT_SENTRY_CACHE_PREFIX__,
     tracesSampleRate: __NUXT_SENTRY_TRACES_SAMPLE_RATE__,
     queueTracesSampleRate: __NUXT_SENTRY_QUEUE_TRACES_SAMPLE_RATE__,
     ignoredRoutes: __NUXT_SENTRY_IGNORED_ROUTES__,
   }),
-
-  sendDefaultPii: true,
-  attachStacktrace: true,
-  normalizeDepth: 8,
-  enableLogs: false,
-
-  /* Дропаем anonymous-recursion/extension шум (под catch-all message-ignoreErrors его не ловит),
-     затем нормализуем console-события (читаемый заголовок + culprit на реальном вызывающем) и
-     прямые captureMessage (заголовок — текст сообщения, а не функция кадра). */
-  beforeSend: (event) => (isNoiseEvent(event) ? null : normalizeMessageEvent(normalizeConsoleEvent(event))),
-
-  debug: false,
-})
+)

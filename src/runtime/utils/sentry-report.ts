@@ -1,5 +1,7 @@
 import type { H3Event } from 'h3'
 
+import { redactHeaders } from './redact-headers'
+
 interface NitroErrorLike {
   cause?: unknown
   data?: unknown
@@ -21,11 +23,15 @@ function isRecord(value: unknown): value is Record<string, unknown> {
  * показать в карточке. Главное — error.data (наш AppErrorData с code/details/causeId)
  * и error.cause (исходная AWS/upstream-ошибка). Без этого sendWithRetry-wrap
  * прячет реальный InvalidAccessKeyId / 5xx в Хранилище-сообщении.
+ *
+ * `extra.headers` — заголовки запроса строкой JSON; значения секретов (cookie сессии, authorization,
+ * token/key/secret в имени) маскируются `[Filtered]` (redact-headers.ts): сырыми они уходили в Sentry на
+ * 10.x и 11, а скраббер Sentry ключи внутри строки не видит.
  */
 export function buildSentryReport(error: NitroErrorLike, event?: H3Event): SentryReport {
   const url = event?.node?.req?.url ?? 'Unknown URL'
   const method = event?.node?.req?.method ?? 'Unknown Method'
-  const headers = event?.node?.req?.headers ? JSON.stringify(event.node.req.headers) : 'No headers'
+  const headers = event?.node?.req?.headers ? JSON.stringify(redactHeaders(event.node.req.headers)) : 'No headers'
 
   const extra: Record<string, unknown> = { url, method, headers }
   if (isRecord(error.data)) {

@@ -1,10 +1,11 @@
+import { redactHeaders } from "./redact-headers.js";
 function isRecord(value) {
   return typeof value === "object" && value !== null;
 }
 export function buildSentryReport(error, event) {
   const url = event?.node?.req?.url ?? "Unknown URL";
   const method = event?.node?.req?.method ?? "Unknown Method";
-  const headers = event?.node?.req?.headers ? JSON.stringify(event.node.req.headers) : "No headers";
+  const headers = event?.node?.req?.headers ? JSON.stringify(redactHeaders(event.node.req.headers)) : "No headers";
   const extra = { url, method, headers };
   if (isRecord(error.data)) {
     extra.appData = error.data;
