@@ -47,6 +47,7 @@ async function runPlugin(options: { disabledRoutes: string[]; pathname: string }
     browserTracingIntegration: vi.fn(() => ({ name: 'BrowserTracing' })),
     vueIntegration: vi.fn(() => ({ name: 'Vue' })),
     captureConsoleIntegration: vi.fn(() => ({ name: 'CaptureConsole' })),
+    browserSessionIntegration: vi.fn(() => ({ name: 'BrowserSession' })),
   }))
   vi.doMock('@mttzzz/nuxt-stale-deploy-guard/sentry', async (importOriginal) => ({
     ...(await importOriginal<Record<string, unknown>>()),

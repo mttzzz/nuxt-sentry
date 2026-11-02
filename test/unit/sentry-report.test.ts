@@ -18,6 +18,26 @@ describe('buildSentryReport', () => {
     expect(typeof result.extra.headers).toBe('string')
   })
 
+  it('extra.headers: cookie сессии и authorization маскируются, остальные заголовки как были', () => {
+    const result = buildSentryReport(
+      { message: 'boom' },
+      makeEvent('/api/x', 'POST', {
+        cookie: 'better-auth.session_token=abc.def; theme=dark',
+        authorization: 'Bearer client-token',
+        'x-forwarded-for': '203.0.113.9',
+        'user-agent': 'Mozilla/5.0',
+      }),
+    )
+    expect(JSON.parse(String(result.extra.headers))).toEqual({
+      cookie: '[Filtered]',
+      authorization: '[Filtered]',
+      'x-forwarded-for': '203.0.113.9',
+      'user-agent': 'Mozilla/5.0',
+    })
+    expect(String(result.extra.headers)).not.toContain('abc.def')
+    expect(String(result.extra.headers)).not.toContain('client-token')
+  })
+
   it('без event — defaults Unknown URL/Method', () => {
     const result = buildSentryReport({ message: 'x' })
     expect(result.extra).toMatchObject({ url: 'Unknown URL', method: 'Unknown Method', headers: 'No headers' })

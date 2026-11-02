@@ -8,6 +8,7 @@ import { loadSessionReplay } from '#nuxt-sentry/replay'
 
 import { createClientBeforeSend } from './utils/before-send'
 import { listenChunkReloadBlocked } from './utils/chunk-reload-report'
+import { buildClientSentryOptions } from './utils/client-init-options'
 import { buildIgnoreErrors } from './utils/ignore-errors'
 import { createRouteMatcher } from './utils/route-patterns'
 import { shouldEnableClientSentry } from './utils/sentry-enabled'
@@ -15,8 +16,9 @@ import { shouldEnableClientSentry } from './utils/sentry-enabled'
 /*
  * Client-side Sentry init (issues-first observability, см.
  * docs/specs/2026-06-18-issues-first-observability-design.md): browserTracing/Vue
- * + captureConsoleIntegration (любой console.warn/error → Issue с полным контекстом),
- * Sentry Logs выключены (enableLogs:false).
+ * + captureConsoleIntegration (любой console.warn/error → Issue с полным контекстом).
+ * Опции собирает utils/client-init-options.ts (политика данных — utils/data-collection.ts); Sentry Logs
+ * не включены: в коде нет Sentry.logger/consoleLoggingIntegration, а опции enableLogs в 11 больше нет.
  *
  * Session Replay — не в integrations init'а, а после него: `loadSessionReplay` из
  * `#nuxt-sentry/replay` (utils/session-replay.ts: динамический импорт peer `@sentry/replay`,
@@ -68,43 +70,27 @@ export default defineNuxtPlugin(async (nuxtApp) => {
    * свойство игнорируют — присваивание безвредно. Подробнее: instrument.server.ts. */
   Error.stackTraceLimit = 50
 
-  Sentry.init({
-    app: nuxtApp.vueApp,
-    dsn: config.dsn,
-    release: config.release,
-    tunnel: config.tunnelEndpoint,
-    enabled: shouldEnableClientSentry({
-      // oxlint-disable-next-line typescript/no-unsafe-assignment, typescript/no-unsafe-member-access -- import.meta.env is virtual module, typed as error but safe at runtime
-      isProd: import.meta.env.PROD,
-      hostname: globalThis.location.hostname,
-      excludeLocalhost: config.excludeLocalhostInProd,
+  Sentry.init(
+    buildClientSentryOptions({
+      app: nuxtApp.vueApp,
+      router,
+      dsn: config.dsn,
+      release: config.release,
+      tunnel: config.tunnelEndpoint,
+      enabled: shouldEnableClientSentry({
+        // oxlint-disable-next-line typescript/no-unsafe-assignment, typescript/no-unsafe-member-access -- import.meta.env is virtual module, typed as error but safe at runtime
+        isProd: import.meta.env.PROD,
+        hostname: globalThis.location.hostname,
+        excludeLocalhost: config.excludeLocalhostInProd,
+      }),
+      tracesSampleRate: config.tracesSampleRate,
+      replaysSessionSampleRate: config.replaysSessionSampleRate,
+      replaysOnErrorSampleRate: config.replaysOnErrorSampleRate ?? 1,
+      ignoreErrors: buildIgnoreErrors(extraIgnore),
+      beforeSend: createClientBeforeSend(staleChunkFilter),
+      tracePropagationTargets: tracePropagationTargets as (string | RegExp)[],
     }),
-    tracesSampleRate: config.tracesSampleRate,
-    replaysSessionSampleRate: config.replaysSessionSampleRate,
-    replaysOnErrorSampleRate: config.replaysOnErrorSampleRate ?? 1,
-    enableLogs: false,
-    sendDefaultPii: true,
-    attachStacktrace: true,
-    normalizeDepth: 8,
-    maxValueLength: 2000,
-    ignoreErrors: buildIgnoreErrors(extraIgnore),
-    beforeSend: createClientBeforeSend(staleChunkFilter),
-    tracePropagationTargets: tracePropagationTargets as (string | RegExp)[],
-    ignoreSpans: [
-      { op: /^browser\.(cache|connect|DNS)$/u },
-      { op: 'resource.other', name: /.+\.(woff2|woff|ttf|eot)$/u },
-      { op: 'resource.link', name: /.+\.css.*$/u },
-      { op: /resource\.(link|script)/u, name: /.+\.js.*$/u },
-      { op: /resource\.(other|img)/u, name: /.+\.(png|svg|jpeg|jpg|gif|bmp|tif|tiff|webp|avif|heic|heif|ico).*$/u },
-      { op: 'measure' },
-    ],
-    debug: false,
-    integrations: [
-      Sentry.browserTracingIntegration({ router }),
-      Sentry.vueIntegration({ app: nuxtApp.vueApp, attachErrorHandler: false }),
-      Sentry.captureConsoleIntegration({ levels: ['warn', 'error'] }),
-    ],
-  })
+  )
 
   void (loadSessionReplay as () => Promise<void>)()
 
