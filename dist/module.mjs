@@ -8,7 +8,7 @@ import { createRouteMatcher } from '../dist/runtime/utils/route-patterns.js';
 import { buildTunnelIngestUrl } from '../dist/runtime/utils/tunnel-ingest-url.js';
 import { readdir, rm } from 'node:fs/promises';
 
-const version = "0.15.1";
+const version = "0.15.2";
 
 function resolveSourcePath(userPath, rootDir, srcDir) {
   let absolute;

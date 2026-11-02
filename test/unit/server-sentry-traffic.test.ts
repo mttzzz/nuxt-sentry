@@ -122,6 +122,7 @@ describe('серверный Sentry: итоговая конфигурация �
         'BunHttpServer',
         'CaptureConsole',
         'Redis',
+        'OtelEventTrace',
         'Http',
         'RequestData',
         'ProcessSession',
