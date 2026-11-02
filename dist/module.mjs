@@ -8,7 +8,7 @@ import { createRouteMatcher } from '../dist/runtime/utils/route-patterns.js';
 import { buildTunnelIngestUrl } from '../dist/runtime/utils/tunnel-ingest-url.js';
 import { readdir, rm } from 'node:fs/promises';
 
-const version = "0.15.0";
+const version = "0.15.1";
 
 function resolveSourcePath(userPath, rootDir, srcDir) {
   let absolute;
@@ -59,18 +59,29 @@ function buildReplayTemplate(enabled, sessionReplayModulePath) {
   return "export async function loadSessionReplay() {}\n";
 }
 
-async function stripServerSourcemaps(rootDir) {
-  const serverDir = resolve(rootDir, ".output", "server");
-  if (!existsSync(serverDir)) {
+const MAP_FILE = /\.map(?:\.(?:gz|br|zst))?$/u;
+async function removeMapFiles(dir) {
+  if (!existsSync(dir)) {
     return 0;
   }
-  const entries = await readdir(serverDir, { recursive: true });
-  const maps = entries.filter((entry) => entry.endsWith(".map"));
-  await Promise.all(maps.map(async (entry) => rm(resolve(serverDir, entry), { force: true })));
-  if (maps.length > 0) {
-    useLogger("sentry").info(`\u0443\u0434\u0430\u043B\u0435\u043D\u043E \u0441\u0435\u0440\u0432\u0435\u0440\u043D\u044B\u0445 sourcemap'\u043E\u0432 \u0438\u0437 .output: ${maps.length}`);
-  }
+  const entries = await readdir(dir, { recursive: true });
+  const maps = entries.filter((entry) => MAP_FILE.test(entry));
+  await Promise.all(maps.map(async (entry) => rm(resolve(dir, entry), { force: true })));
   return maps.length;
+}
+async function stripServerSourcemaps(rootDir) {
+  const removed = await removeMapFiles(resolve(rootDir, ".output", "server"));
+  if (removed > 0) {
+    useLogger("sentry").info(`\u0443\u0434\u0430\u043B\u0435\u043D\u043E \u0441\u0435\u0440\u0432\u0435\u0440\u043D\u044B\u0445 sourcemap'\u043E\u0432 \u0438\u0437 .output: ${removed}`);
+  }
+  return removed;
+}
+async function stripPublicSourcemaps(publicDir) {
+  const removed = await removeMapFiles(publicDir);
+  if (removed > 0) {
+    useLogger("sentry").info(`\u0443\u0434\u0430\u043B\u0435\u043D\u043E \u043A\u043B\u0438\u0435\u043D\u0442\u0441\u043A\u0438\u0445 sourcemap'\u043E\u0432 \u0438\u0437 \u043F\u0443\u0431\u043B\u0438\u0447\u043D\u043E\u0433\u043E \u043A\u0430\u0442\u0430\u043B\u043E\u0433\u0430 \u0441\u0431\u043E\u0440\u043A\u0438: ${removed}`);
+  }
+  return removed;
 }
 
 const DEFAULTS = {
@@ -256,6 +267,7 @@ Server-side files (e.g. server/utils/error-filter.ts) need \`~~/server/...\`.`
       });
     }
     if (process.env.NODE_ENV === "production" && process.env.SENTRY_AUTH_TOKEN) {
+      process.env.SENTRY_CLI_NO_TELEMETRY ??= "1";
       nuxt.options.vite.plugins ??= [];
       const plugins = Array.isArray(nuxt.options.vite.plugins) ? nuxt.options.vite.plugins : [nuxt.options.vite.plugins];
       plugins.push(
@@ -276,18 +288,13 @@ Server-side files (e.g. server/utils/error-filter.ts) need \`~~/server/...\`.`
               setCommits: { auto: true, ignoreMissing: true },
               deploy: { env: "production" }
             }
-          } : {},
-          sourcemaps: {
-            /* Карты нужны Sentry на аплоаде, а не рантайму: под запускается без
-             * --enable-source-maps, читать их некому. Серверные раньше оставались в образе —
-             * у ai.pushka.biz это 51 MB из 178 MB слоя .output, то есть почти треть байтов,
-             * которые каждый деплой уезжают в реестр (замер 13.08: пуш слоёв 28–260 s в
-             * зависимости от настроения DOCR). Удаляем все после загрузки. */
-            filesToDeleteAfterUpload: [".output/**/*.map"]
-          }
+          } : {}
         })
       );
       nuxt.options.vite.plugins = plugins;
+      nuxt.hook("nitro:build:public-assets", async (nitro) => {
+        await stripPublicSourcemaps(nitro.options.output.publicDir);
+      });
     }
     nuxt.hook("nitro:init", (nitro) => {
       if (process.env.NODE_ENV !== "production") {

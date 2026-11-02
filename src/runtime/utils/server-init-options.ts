@@ -24,15 +24,19 @@ import { createTracesSampler } from './traces-sampler'
  *   - dedupeIntegration                  → убрана: она режет подряд идущие одинаковые события ГЛОБАЛЬНО, и
  *                                          у сервера счётчики событий и «затронутых пользователей» занизились
  *                                          бы (на 10.x сервер её не имел, браузер имел);
+ *   - systemErrorIntegration (`NodeSystemError`) → снята: на Bun ≥ 1.4.3 она активна (на 10.x в Bun-SDK её не было),
+ *                                          вырезает `'path'` и `'dest'` из exception.value (у ENOENT/EACCES пропадает
+ *                                          путь — меняются заголовки и, без in-app кадров, группировка issue) и
+ *                                          добавляет contexts.node_system_error;
  *   - runtime-инжект диагностических каналов → enableRuntimeChannelInjection: false: на Bun 1.4.4 он
  *                                          неактивен (нет Module.registerHooks), но Bun выдаёт версию Node 26 —
  *                                          с появлением registerHooks SDK начал бы патчить модули сам.
- * Новые умолчания 11 без побочных эффектов на мониторинг оставлены (systemErrorIntegration,
- * conversationIdIntegration, error-интеграции фреймворков — инертны без своих фреймворков).
+ * Прочие новые умолчания 11 оставлены: conversationIdIntegration и error-интеграции фреймворков инертны без своих
+ * фреймворков.
  */
 
-/* Имена интеграций, которых на 10.x в Bun-SDK не было и которые 11 ставит по умолчанию. */
-const DROPPED_DEFAULT_INTEGRATIONS: Record<string, true> = { Fetch: true, Dedupe: true }
+/* Имена интеграций, которых на 10.x в Bun-SDK не было и которые 11 ставит по умолчанию (их побочные эффекты — выше). */
+const DROPPED_DEFAULT_INTEGRATIONS: Record<string, true> = { Fetch: true, Dedupe: true, NodeSystemError: true }
 
 export interface ServerInitInput {
   dsn: string
@@ -68,7 +72,8 @@ function serverBeforeSend<T extends Event>(event: T): T | null {
   return isNoiseEvent(event) ? null : normalizeMessageEvent(normalizeConsoleEvent(event))
 }
 
-/* `enableRuntimeChannelInjection` читает NodeClient (его наследует BunClient), но в типе BunOptions его нет. */
+/* `enableRuntimeChannelInjection` читает NodeClient: его создаёт `Sentry.init` Bun-SDK (через init из `@sentry/node`);
+   BunClient наследует ServerRuntimeClient и в этом пути не участвует. В типе BunOptions опции нет. */
 export type ServerSentryOptions = BunOptions & { enableRuntimeChannelInjection: boolean }
 
 export function buildServerSentryOptions(input: ServerInitInput): ServerSentryOptions {

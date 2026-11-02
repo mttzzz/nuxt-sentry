@@ -16,7 +16,13 @@ type RouterOption = NonNullable<Parameters<typeof Sentry.browserTracingIntegrati
  *     было 'route' (новая сессия на каждую навигацию SPA). Возвращено 'route': цифры Release Health не сдвигаются.
  *     Статус сессии при необработанной ошибке в 11 — `unhandled` вместо `crashed`, настроить это нельзя;
  *   - имена resource-спанов стали доменом, а op браузерных таймингов — строчными (`browser.dns`): правила
- *     ignoreSpans ниже написаны под 11 (URL ресурса — в атрибуте `url.full`).
+ *     ignoreSpans ниже написаны под 11 (URL ресурса — в атрибуте `url.full`);
+ *   - текст нативной сетевой ошибки fetch: умолчание 11 (`enhanceFetchErrorMessages: 'always'`) дописывает хост ПРЯМО в
+ *     `error.message` пропатченного `globalThis.fetch` — и для относительных URL (на 10.x `new URL(url)` без базы
+ *     падал на относительном адресе, суффикса не было). Приложение и сторонний код ищут нативный текст («Failed to
+ *     fetch», «Load failed», «NetworkError when attempting to fetch resource.»; AI SDK — `message === 'load failed'`):
+ *     с суффиксом ` (host)` сетевой обрыв (Safari/iOS, Firefox) перестаёт распознаваться. 'report-only': текст ошибки
+ *     приложения нативный, хост дописывается только в значение исключения события Sentry.
  */
 
 /* Шум трассировки: тайминги соединения, ресурсы-ассеты, performance.measure. Имя resource-спана в 11 — домен,
@@ -66,6 +72,7 @@ export function buildClientSentryOptions(input: ClientInitInput): ClientInitOpti
     beforeSend: input.beforeSend,
     tracePropagationTargets: input.tracePropagationTargets,
     ignoreSpans: CLIENT_IGNORE_SPANS,
+    enhanceFetchErrorMessages: 'report-only',
     debug: false,
     integrations: [
       Sentry.browserTracingIntegration({ router: input.router }),
