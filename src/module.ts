@@ -16,7 +16,7 @@ import type { ModuleOptions, PublicRuntimeSentryConfig, ResolvedModuleOptions } 
 import { EARLY_BEACON_HEAD_KEY, buildEarlyBeaconScript } from './runtime/utils/early-beacon'
 import { createRouteMatcher } from './runtime/utils/route-patterns'
 import { buildTunnelIngestUrl } from './runtime/utils/tunnel-ingest-url'
-import { stripPublicSourcemaps, stripServerSourcemaps } from './strip-sourcemaps'
+import { stripServerSourcemaps } from './strip-sourcemaps'
 
 export type { ModuleOptions } from './runtime/types'
 
@@ -319,6 +319,15 @@ export default defineNuxtModule<ModuleOptions>({
           silent: true,
           telemetry: false,
           /*
+           * Карты нужны Sentry на загрузке, а не рантайму: под стартует без --enable-source-maps, браузер их не запрашивает
+           * (client.sourcemap — 'hidden'). Плагин (с 11.12) кладёт каждую карту на загрузку и убирает её из бандла ДО записи в
+           * выходной каталог Vite — `delete bundle[mapFileName]` в generateBundle, — так что ни в `.output/public`, ни в образ, ни
+           * на CDN карты не попадают вовсе. Карта 'visible' (client.sourcemap: true) переключается в 'hidden': без комментария
+           * sourceMappingURL браузер её не запрашивает. До 0.16.0 карты удалял хук `nitro:build:public-assets`: глоб плагина
+           * `.output/**\/*.map` срабатывал, когда `.output/public` ещё не существовало, и не находил ничего.
+           */
+          sourcemaps: { deleteSourcemapsAfterUpload: true },
+          /*
            * Release создаётся в Sentry только если SENTRY_RELEASE задан в env билда.
            * setCommits.auto → линкует коммиты от prev-release до current (suspect commits).
            * deploy.env=production → метит release как задеплоенный (Releases UI).
@@ -335,21 +344,9 @@ export default defineNuxtModule<ModuleOptions>({
         }),
       )
       nuxt.options.vite.plugins = plugins
-
-      /*
-       * Карты нужны Sentry на загрузке, а не рантайму: под стартует без --enable-source-maps, браузер их не запрашивает
-       * (client.sourcemap — 'hidden'). Плагин сам их не удаляет: его `filesToDeleteAfterUpload` (глоб `.output/**\/*.map`)
-       * срабатывает в `writeBundle` клиентской сборки Vite, когда `.output/public` ещё не существует — Nitro копирует
-       * клиентскую сборку позже, — и ничего не находил: все карты уезжали в образ и на CDN. Поэтому чистим публичный каталог
-       * Nitro сразу после копирования, до манифеста публичных ассетов; загрузка в Sentry к этому моменту завершена.
-       * Подробности — strip-sourcemaps.ts.
-       */
-      nuxt.hook('nitro:build:public-assets', async (nitro) => {
-        await stripPublicSourcemaps(nitro.options.output.publicDir)
-      })
     }
 
-    /* Серверные карты — мёртвый груз в образе; подробности в strip-sourcemaps.ts. */
+    /* Серверные карты (`.output/server`, Nitro/Rollup — плагин Sentry там не работает) — мёртвый груз в образе; подробности в strip-sourcemaps.ts. */
     nuxt.hook('nitro:init', (nitro) => {
       if (process.env.NODE_ENV !== 'production') {
         return

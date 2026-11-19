@@ -1,12 +1,14 @@
 /*
  * Portable instrumentation для postgres-js (npm `postgres`).
  *
- * Зачем не `Sentry.postgresJsIntegration()`: она подписана на диагностические каналы, которые
+ * Зачем не `Sentry.postgresJsIntegration()` для postgres 3.x: она подписана на диагностические каналы, которые
  * публикует либо runtime-инжект Sentry (Module.registerHooks — в Bun 1.4 его нет), либо сборка с
  * orchestrion-плагином; Nitro бандлит `postgres` в один файл, и у автоматического патча нет модуля,
- * который можно подменить. Каналы `postgres:query|connect|transaction` у postgres 4.x Sentry 11.10 не
- * использует. На 10.x к тому же не работал import-in-the-middle под Bun
- * (https://github.com/getsentry/sentry-javascript/issues/14202) — db-спанов не было вовсе.
+ * который можно подменить. У postgres ≥ 4 с Sentry 11.11 иначе: интеграция `PostgresJs` подписана на нативный
+ * канал `postgres:query`, и инжект не нужен (модуль снимает её, когда трейсов нет вовсе, — server-init-options.ts).
+ * На 10.x к тому же не работал import-in-the-middle под Bun
+ * (https://github.com/getsentry/sentry-javascript/issues/14202) — db-спанов не было вовсе; тикет закрыт сменой
+ * подхода на каналы в Sentry 11, а не исправлением.
  *
  * Решение: `Sentry.instrumentPostgresJsSql` — portable-обёртка, которую `@sentry/bun` реэкспортирует
  * с 11.10.0 (до этого она жила только в `@sentry/server-utils`, а на 10.x — в `@sentry/core`). Патчит

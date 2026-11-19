@@ -5,12 +5,13 @@ import { resolve as resolvePath } from 'node:path'
 import { useLogger } from '@nuxt/kit'
 
 /*
- * Карты нужны Sentry на загрузке, а не рантайму: под стартует без `--enable-source-maps`, браузеру их никто не отдаёт
- * (client.sourcemap: 'hidden' — без комментария sourceMappingURL). Остаются они только мёртвым грузом и утечкой исходников:
- *   - серверные — после сборки Nitro, в реестр каждым деплоем уезжают десятки МБ (у ai.pushka.biz 51 MB из 178 MB слоя
- *     `.output`, пуш слоёв и есть главная статья времени деплоя; замер 13.08: 28–260 s);
- *   - клиентские — лежат в `.output/public/_nuxt` и отдаются ПУБЛИЧНО: и самим сервером, и с CDN, если публикатор ассетов
- *     заливает всё, что лежит в `public` (у ai.pushka.biz — 630 карт, 46 МБ из 69 МБ каталога, с `sourcesContent`).
+ * Серверные карты — `.output/server` после сборки Nitro. Карты нужны Sentry на загрузке, а не рантайму: под стартует без
+ * `--enable-source-maps`, остаются они только мёртвым грузом — в реестр каждым деплоем уезжают десятки МБ (у ai.pushka.biz
+ * 51 MB из 178 MB слоя `.output`, пуш слоёв и есть главная статья времени деплоя; замер 13.08: 28–260 s).
+ *
+ * Плагин загрузки карт Sentry (`@sentry/vite-plugin`) здесь не участвует: это бандл Nitro (Rollup), а не Vite. Клиентские
+ * карты (`.output/public`, до 0.16.0 их чистил хук `nitro:build:public-assets`) убирает сам плагин опцией
+ * `sourcemaps.deleteSourcemapsAfterUpload`: карта не пишется в выходной каталог Vite вовсе — см. module.ts.
  *
  * Если появится загрузка серверных карт в Sentry, она обязана отработать ДО этой чистки.
  */
@@ -33,23 +34,6 @@ export async function stripServerSourcemaps(rootDir: string): Promise<number> {
   const removed = await removeMapFiles(resolvePath(rootDir, '.output', 'server'))
   if (removed > 0) {
     useLogger('sentry').info(`удалено серверных sourcemap'ов из .output: ${removed}`)
-  }
-  return removed
-}
-
-/*
- * Клиентские карты: публичный каталог Nitro (`nitro.options.output.publicDir`, .output/public).
- *
- * Момент — hook `nitro:build:public-assets`: Nitro уже скопировал клиентскую сборку (`<buildDir>/dist/client` → .output/public)
- * и ещё не собирал манифест публичных ассетов. Раньше нельзя: Vite-плагин Sentry загружает карты и чистит файлы в
- * `writeBundle` клиентской сборки, а `.output/public` на этот момент ещё не существует (Nitro копирует его позже) —
- * глоб `.output/**\/*.map` не находил ничего, и все карты уезжали в образ и на CDN. Позже нельзя: манифест (в бандле
- * сервера) перечислил бы удалённые файлы, и запрос карты кончался бы ошибкой чтения вместо 404.
- */
-export async function stripPublicSourcemaps(publicDir: string): Promise<number> {
-  const removed = await removeMapFiles(publicDir)
-  if (removed > 0) {
-    useLogger('sentry').info(`удалено клиентских sourcemap'ов из публичного каталога сборки: ${removed}`)
   }
   return removed
 }

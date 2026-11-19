@@ -10,9 +10,9 @@
   "dependencies": {
     "@mttzzz/nuxt-stale-deploy-guard": "github:mttzzz/nuxt-stale-deploy-guard#main",
     "@prisma/instrumentation": "^7.8.0",
-    "@sentry/bun": "^10.50.0",
-    "@sentry/vite-plugin": "^5.2.0",
-    "@sentry/vue": "^10.50.0",
-    "nuxt": "^4.4.2"
+    "@sentry/bun": "^11.14.0",
+    "@sentry/vite-plugin": "^11.14.0",
+    "@sentry/vue": "^11.14.0",
+    "nuxt": "^4.4.5"
   }
 }

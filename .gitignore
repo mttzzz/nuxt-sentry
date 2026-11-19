@@ -17,3 +17,4 @@ playground/dist
 test/fixtures/**/.nuxt
 test/fixtures/**/.output
 test/fixtures/**/node_modules
+.tmp

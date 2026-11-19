@@ -8,7 +8,7 @@ import { createRouteMatcher } from '../dist/runtime/utils/route-patterns.js';
 import { buildTunnelIngestUrl } from '../dist/runtime/utils/tunnel-ingest-url.js';
 import { readdir, rm } from 'node:fs/promises';
 
-const version = "0.15.2";
+const version = "0.16.0";
 
 function resolveSourcePath(userPath, rootDir, srcDir) {
   let absolute;
@@ -73,13 +73,6 @@ async function stripServerSourcemaps(rootDir) {
   const removed = await removeMapFiles(resolve(rootDir, ".output", "server"));
   if (removed > 0) {
     useLogger("sentry").info(`\u0443\u0434\u0430\u043B\u0435\u043D\u043E \u0441\u0435\u0440\u0432\u0435\u0440\u043D\u044B\u0445 sourcemap'\u043E\u0432 \u0438\u0437 .output: ${removed}`);
-  }
-  return removed;
-}
-async function stripPublicSourcemaps(publicDir) {
-  const removed = await removeMapFiles(publicDir);
-  if (removed > 0) {
-    useLogger("sentry").info(`\u0443\u0434\u0430\u043B\u0435\u043D\u043E \u043A\u043B\u0438\u0435\u043D\u0442\u0441\u043A\u0438\u0445 sourcemap'\u043E\u0432 \u0438\u0437 \u043F\u0443\u0431\u043B\u0438\u0447\u043D\u043E\u0433\u043E \u043A\u0430\u0442\u0430\u043B\u043E\u0433\u0430 \u0441\u0431\u043E\u0440\u043A\u0438: ${removed}`);
   }
   return removed;
 }
@@ -278,6 +271,15 @@ Server-side files (e.g. server/utils/error-filter.ts) need \`~~/server/...\`.`
           silent: true,
           telemetry: false,
           /*
+           * Карты нужны Sentry на загрузке, а не рантайму: под стартует без --enable-source-maps, браузер их не запрашивает
+           * (client.sourcemap — 'hidden'). Плагин (с 11.12) кладёт каждую карту на загрузку и убирает её из бандла ДО записи в
+           * выходной каталог Vite — `delete bundle[mapFileName]` в generateBundle, — так что ни в `.output/public`, ни в образ, ни
+           * на CDN карты не попадают вовсе. Карта 'visible' (client.sourcemap: true) переключается в 'hidden': без комментария
+           * sourceMappingURL браузер её не запрашивает. До 0.16.0 карты удалял хук `nitro:build:public-assets`: глоб плагина
+           * `.output/**\/*.map` срабатывал, когда `.output/public` ещё не существовало, и не находил ничего.
+           */
+          sourcemaps: { deleteSourcemapsAfterUpload: true },
+          /*
            * Release создаётся в Sentry только если SENTRY_RELEASE задан в env билда.
            * setCommits.auto → линкует коммиты от prev-release до current (suspect commits).
            * deploy.env=production → метит release как задеплоенный (Releases UI).
@@ -292,9 +294,6 @@ Server-side files (e.g. server/utils/error-filter.ts) need \`~~/server/...\`.`
         })
       );
       nuxt.options.vite.plugins = plugins;
-      nuxt.hook("nitro:build:public-assets", async (nitro) => {
-        await stripPublicSourcemaps(nitro.options.output.publicDir);
-      });
     }
     nuxt.hook("nitro:init", (nitro) => {
       if (process.env.NODE_ENV !== "production") {
