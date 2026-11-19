@@ -55,11 +55,11 @@ export default defineNuxtConfig({
 - `NODE_ENV=production` — Sentry активен только здесь.
 - `SENTRY_DISABLED=1` — явный off-switch (для test-image'а с `target=production`).
 - `NUXT_TEST_MODE=1` (через `runtimeConfig.testMode`) — tunnel отвечает 204, не форвардит.
-- `SENTRY_AUTH_TOKEN` — build-time, для sourcemap upload через `@sentry/vite-plugin`; с ним же модуль удаляет клиентские карты из `.output/public` и выключает телеметрию CLI (`SENTRY_CLI_NO_TELEMETRY=1`, если не задана явно).
+- `SENTRY_AUTH_TOKEN` — build-time, для sourcemap upload через `@sentry/vite-plugin`; с ним же плагин убирает карты из сборки после загрузки (`sourcemaps.deleteSourcemapsAfterUpload`, ≥ 0.16.0), а модуль выключает телеметрию CLI (`SENTRY_CLI_NO_TELEMETRY=1`, если не задана явно).
 
 ## Sentry 11 (модуль ≥ 0.15.0)
 
-Минимальные версии peer: `@sentry/bun`, `@sentry/vue`, `@sentry/replay`, `@sentry/core` — **^11.10.0**, `@sentry/vite-plugin` — **^11.8.0** (с 11.8.0 пакет релизится вместе с SDK; Node ≥ 20.19, Bun ≥ 1.3.14), `@opentelemetry/api` — **^1.9.0** (с 0.15.2). Версии 10.x и `@sentry/vite-plugin` 5.x больше не поддерживаются: проекты на `#main` заденет только бамп их лока. `instrumentPostgresJs` берёт `instrumentPostgresJsSql` из `@sentry/bun` (в 11.10.0 он появился там; из `@sentry/core` его убрали).
+Минимальные версии peer: `@sentry/bun`, `@sentry/vue`, `@sentry/replay`, `@sentry/core` — **^11.10.0**, `@sentry/vite-plugin` — **^11.12.0** (с 0.16.0: опция плагина `sourcemaps.deleteSourcemapsAfterUpload` с Vite-интеграцией есть с 11.12.0; Node ≥ 20.19, Bun ≥ 1.3.14), `@opentelemetry/api` — **^1.9.0** (с 0.15.2). Модуль проверяется на **11.14.0** (dev-зависимости). Версии 10.x и `@sentry/vite-plugin` 5.x больше не поддерживаются: проекты на `#main` заденет только бамп их лока. `instrumentPostgresJs` берёт `instrumentPostgresJsSql` из `@sentry/bun` (в 11.10.0 он появился там; из `@sentry/core` его убрали).
 
 Мониторинг на 11 остаётся таким, каким был на 10.x: что Sentry 11 включает сам — выключено или возвращено (`runtime/utils/server-init-options.ts`, `client-init-options.ts`, `data-collection.ts`; итоговую конфигурацию и трафик проверяют тесты `server-sentry-traffic`, `client-init-options`).
 
@@ -81,6 +81,7 @@ export default defineNuxtConfig({
 | `systemErrorIntegration` (`NodeSystemError`)        | в Bun-SDK не было                                                                                      | ставится по умолчанию; на Bun ≥ 1.4.3 активна: вырезает `'path'`/`'dest'` из `exception.value` (ENOENT/EACCES теряют путь в заголовке), добавляет `contexts.node_system_error`                   | снята с сервера (≥ 0.15.1): заголовки и группировка как на 10.x                                                                                                |
 | `trace_id` события внутри OTel-спана (chassis ядра) | trace_id и span_id активного OTel-спана (`setupEventContextTrace` из `@sentry/opentelemetry`)          | `contexts.trace` из активного спана Sentry перекрывает прочее: событие в OTel-спане несёт trace_id браузера (`sentry-trace`) или http.server-спана; `openTelemetryIntegration()` не помогает     | интеграция `OtelEventTrace` (≥ 0.15.2, `preprocessEvent`): в спане — trace_id/span_id OTel, вне — как у Sentry; peer `@opentelemetry/api`                      |
 | текст нативной сетевой ошибки `fetch` (браузер)     | суффикс ` (host)` дописывался только к абсолютным URL (на относительном `new URL(url)` без базы падал) | `enhanceFetchErrorMessages: 'always'` дописывает хост в `error.message` и для относительных URL: «Load failed (ai.pushka.biz)» ломает проверки приложения и AI SDK (`message === 'load failed'`) | `'report-only'` (≥ 0.15.1): текст ошибки приложения нативный, хост — только в значении исключения события Sentry (у относительных URL он там теперь тоже есть) |
+| интеграция `PostgresJs` (с 11.11)                   | на Bun её не было                                                                                      | по умолчанию: подписка на канал `postgres:query` postgres ≥ 4, на каждый запрос разбор текста SQL ещё до решения «будет ли спан»                                                                 | снята, когда `tracesSampleRate` и `queueTracesSampleRate` равны 0 (≥ 0.16.0); с трейсами остаётся — замер ниже                                                 |
 
 Что оставлено как умолчание 11 (побочных эффектов на мониторинг нет): `conversationIdIntegration`, error-интеграции фреймворков, `Nitro` (на Nitro 2/h3 1.x инертна; на Nitro 3 она добавляла бы `Server-Timing: sentry-trace/baggage` — проверить при миграции). Трассировка Sentry в 11 — потоковые спаны по умолчанию; у проектов с `tracesSampleRate > 0` (кроме ai.pushka.biz: там 0) вместо транзакций пойдут спаны, и добавятся каналы-интеграции (postgres, ioredis и др.) — квоту сверить после бампа.
 
@@ -89,8 +90,25 @@ export default defineNuxtConfig({
 Под `NODE_ENV=production` и `SENTRY_AUTH_TOKEN` плагин `@sentry/vite-plugin` 11 исполняет npm-CLI `sentry` внутри процесса сборки (release → set-commits → finalize → deploy → артефакт-бандл с debug-id).
 
 - **Телеметрия CLI выключена.** CLI шлёт СВОЮ телеметрию (транзакция `cli.command` на каждую команду, теги `sentry.org`/`sentry.project`) на `o1.ingest.us.sentry.io`; `telemetry: false` плагина гасит только телеметрию самого плагина. Модуль ставит `SENTRY_CLI_NO_TELEMETRY ??= '1'` до запуска плагина: явное значение (в том числе `0`) не перетирается.
-- **Клиентские карты не остаются в сборке.** Плагин собирался удалить `.output/**/*.map` после загрузки, но его глоб срабатывает в `writeBundle` клиентской сборки Vite — `.output/public` в этот момент ещё нет (Nitro копирует `<buildDir>/dist/client` позже), и не удалялось ничего: все карты (у ai.pushka.biz 630 файлов, 46 МБ, с `sourcesContent`) ехали в образ, отдавались самим сервером и заливались на CDN. С 0.15.1 карты (и `.map.gz`/`.map.br`) удаляются из публичного каталога Nitro (`nitro.options.output.publicDir`) в хуке `nitro:build:public-assets` — сразу после копирования, до манифеста публичных ассетов. Серверные карты чистит хук `compiled` (как раньше). Без токена карты не выгружались, и их никто не трогает.
-- **Если карты нужны вне Sentry** (свой шаг сборки забирает `.output/public/**/*.map`), в рамках самой сборки такой точки нет: забирайте их из `<buildDir>/dist/client`.
+- **Клиентские карты не попадают в сборку (≥ 0.16.0).** Модуль включает опцию плагина `sourcemaps.deleteSourcemapsAfterUpload` (peer `@sentry/vite-plugin` ≥ 11.12.0): плагин кладёт карту на загрузку и убирает её из бандла до записи в выходной каталог Vite, поэтому ни в `.output/public`, ни в образ, ни на CDN она не попадает (у ai.pushka.biz это 630 файлов, 46 МБ, с `sourcesContent`). Карту `visible` (`sourcemap.client: true`) плагин переключает в `hidden`. До 0.16.0 карты удалял хук `nitro:build:public-assets`: глоб самого плагина (`.output/**/*.map`) срабатывал в `writeBundle`, когда `.output/public` ещё не существовало (Nitro копирует `<buildDir>/dist/client` позже), и не находил ничего. Серверные карты (`.output/server`, бандл Nitro, плагин Sentry там не работает) по-прежнему чистит хук `compiled`. Без токена карты не выгружались, и их никто не трогает. Гард — `test/e2e/sourcemap-build.test.ts`: настоящая сборка против поддельного Sentry, в `.output` ни одного `*.map*`, а артефакт-бандл ушёл на загрузку.
+- **Если карты нужны вне Sentry**, в рамках сборки с токеном их не получить — они не пишутся вовсе: соберите без `SENTRY_AUTH_TOKEN`, карты останутся в `<buildDir>/dist/client`.
+
+### PostgresJs и трейсы (модуль ≥ 0.16.0)
+
+С 11.11 `PostgresJs` — интеграция Sentry по умолчанию: на Bun она подписывается на канал `postgres:query`, который публикует postgres ≥ 4, и на каждый запрос, ещё до решения «будет ли спан», разбирает текст SQL (санитайзер, имя спана, атрибуты). Замер 19.11.2026: Bun 1.4.5, Sentry 11.14.0 с опциями модуля и `tracesSampleRate: 0`, postgres 4.1.1, общий Postgres дорожек 18.7, 10 соединений, `unsafe` с параметрами (как у drizzle), прогоны чередовались по кругу, аллокации — сумма «bytes allocated this cycle» из `BUN_JSC_logGC=1`:
+
+| запрос на 10 параллельных соединений | без Sentry            | Sentry без PostgresJs | Sentry с PostgresJs | PostgresJs добавляет              |
+| ------------------------------------ | --------------------- | --------------------- | ------------------- | --------------------------------- |
+| 19 байт SQL                          | 18,6 мкс CPU, 4,4 КБ  | 18,0 мкс, 4,5 КБ      | 27,6 мкс, 9,9 КБ    | +9,6 мкс (+53 %), +5,4 КБ (×2,2)  |
+| 2 КБ SQL                             | 36,5 мкс CPU, 11,9 КБ | 33,7 мкс, 11,7 КБ     | 96,5 мкс, 57,6 КБ   | +62,8 мкс (×2,9), +45,9 КБ (×4,9) |
+
+Внутри http.server-спана с несэмплированным корнем добавка не меньше (2 КБ SQL: +68 мкс CPU, +47 КБ), пропускная способность на 2 КБ SQL падает с ≈34 до ≈12 тыс. запросов/с. Повторный прогон (5 раундов по 100 тыс. запросов, шумный хост) даёт тот же порядок: +56 мкс на запрос с 2 КБ SQL.
+
+**Решение.** Если ни один корневой спан не может стать транзакцией — `tracesSampleRate` и `queueTracesSampleRate` равны `0` — модуль снимает `PostgresJs`: спанов нет и быть не может, а цена остаётся. На канале тогда нет подписчиков, и postgres не строит контекст запроса. Потребителям с трейсами (любой из двух rate больше 0) интеграция остаётся. Проекту, который держит Sentry «только для ошибок», нужны оба нуля: `tracesSampleRate: 0` и `queueTracesSampleRate: 0` (второй по умолчанию 0.1). Явная обёртка `instrumentPostgresJs` от этого не зависит.
+
+### Предупреждение Sentry про инъекцию каналов на Bun (Sentry ≥ 11.12)
+
+На Bun при старте Sentry печатает одну строку `[Sentry] No diagnostics-channel injection detected…`: каналы-интеграции инжектятся только сборкой с плагином `@sentry/bun/plugin`, а Bun 1.4 не умеет инжект во время работы (нет `Module.registerHooks`, oven-sh/bun#27369), поэтому модуль его выключает (`enableRuntimeChannelInjection: false`). Решение: принять, не гасить. Строка идёт мимо `captureConsoleIntegration` и issue в Sentry не создаёт (проверяет `test/unit/server-postgres-js.test.ts`).
 
 ### Корреляция trace_id событий ядра со спанами chassis (модуль ≥ 0.15.2)
 
@@ -132,7 +150,7 @@ export default defineSentryTask({
 
 ### `instrumentPostgresJs(sql)`
 
-(существует с v0.2) — оборачивает postgres-js клиент для Sentry DB spans на Bun.
+(существует с v0.2) — оборачивает postgres-js клиент для Sentry DB spans на Bun. С Sentry ≥ 11.11 интеграция `PostgresJs` включена по умолчанию и подписывается на канал `postgres:query` (postgres ≥ 4); вместе с обёрткой двойного спана нет (интеграция пропускает запросы под спаном обёртки). Когда трейсов нет вовсе (оба rate = 0), интеграцию снимает сам модуль, а обёртка так же разбирает текст каждого запроса — в таком проекте она не нужна (см. «PostgresJs и трейсы»).
 
 ## Sub-path exports (явный import)
 

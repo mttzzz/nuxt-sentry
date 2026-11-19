@@ -9,7 +9,8 @@ export interface ServerInitInput {
     queueTracesSampleRate: number;
     ignoredRoutes: readonly string[];
 }
-export declare function buildServerIntegrations(defaults: Integration[], cachePrefix: string): Integration[];
+export declare function canSampleTraces(input: Pick<ServerInitInput, 'tracesSampleRate' | 'queueTracesSampleRate'>): boolean;
+export declare function buildServerIntegrations(defaults: Integration[], cachePrefix: string, tracing: boolean): Integration[];
 export type ServerSentryOptions = BunOptions & {
     enableRuntimeChannelInjection: boolean;
 };

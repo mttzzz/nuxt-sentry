@@ -4,9 +4,15 @@ import { DATA_COLLECTION } from "./data-collection.js";
 import { otelEventTraceIntegration } from "./otel-event-trace.js";
 import { createTracesSampler } from "./traces-sampler.js";
 const DROPPED_DEFAULT_INTEGRATIONS = { Fetch: true, Dedupe: true, NodeSystemError: true };
-export function buildServerIntegrations(defaults, cachePrefix) {
+const TRACING_ONLY_INTEGRATIONS = { PostgresJs: true };
+export function canSampleTraces(input) {
+  return input.tracesSampleRate > 0 || input.queueTracesSampleRate > 0;
+}
+export function buildServerIntegrations(defaults, cachePrefix, tracing) {
   return [
-    ...defaults.filter(({ name }) => !Object.hasOwn(DROPPED_DEFAULT_INTEGRATIONS, name)),
+    ...defaults.filter(
+      ({ name }) => !Object.hasOwn(DROPPED_DEFAULT_INTEGRATIONS, name) && (tracing || !Object.hasOwn(TRACING_ONLY_INTEGRATIONS, name))
+    ),
     /* Явный экземпляр с настройками, а не дефолт: Bun.serve ядра (публичный и внутренний порт). */
     Sentry.bunServerIntegration({ maxRequestBodySize: "none", sessions: false }),
     /* Серверы на node:http внутри процесса (Bun не публикует http.server.request.start). */
@@ -26,7 +32,7 @@ export function buildServerSentryOptions(input) {
     dsn: input.dsn,
     release: input.release,
     enabled: input.enabled,
-    integrations: (defaults) => buildServerIntegrations(defaults, input.cachePrefix),
+    integrations: (defaults) => buildServerIntegrations(defaults, input.cachePrefix, canSampleTraces(input)),
     /* Какие корневые спаны становятся транзакциями — utils/traces-sampler.ts (чистая фабрика, покрыта юнитами). */
     tracesSampler: createTracesSampler({
       tracesSampleRate: input.tracesSampleRate,

@@ -36,12 +36,24 @@ import { createTracesSampler } from './traces-sampler'
  *                                          активного OTel-спана стороннего провайдера (chassis ядра) несёт его
  *                                          trace_id и span_id, как на 10.x (@sentry/opentelemetry); на 11 без неё —
  *                                          trace браузера (sentry-trace) или http.server-спана Sentry;
+ *   - PostgresJs (с 11.11)               → снята, когда трейсов нет вовсе (tracesSampleRate и queueTracesSampleRate = 0).
+ *                                          Интеграция подписывается на канал `postgres:query` postgres ≥ 4 и на каждый
+ *                                          запрос, ещё до решения «будет ли спан», разбирает текст SQL: санитайзер, имя
+ *                                          спана, атрибуты. Замер 19.11.2026 (Bun 1.4.5, Sentry 11.14.0, postgres 4.1.1,
+ *                                          общий Postgres дорожек, 10 соединений, `unsafe` с параметрами, как у drizzle,
+ *                                          tracesSampleRate 0): на запрос с 19 байтами SQL +10 мкс CPU и +5 КБ аллокаций,
+ *                                          на запрос с 2 КБ SQL +63 мкс и +46 КБ — CPU ×2,9 и аллокации ×4,9 к запросу
+ *                                          без интеграции. С включёнными трейсами интеграция остаётся: db-спаны внутри
+ *                                          транзакций нужны;
  * Прочие новые умолчания 11 оставлены: conversationIdIntegration и error-интеграции фреймворков инертны без своих
  * фреймворков.
  */
 
 /* Имена интеграций, которых на 10.x в Bun-SDK не было и которые 11 ставит по умолчанию (их побочные эффекты — выше). */
 const DROPPED_DEFAULT_INTEGRATIONS: Record<string, true> = { Fetch: true, Dedupe: true, NodeSystemError: true }
+
+/* Интеграции, которые нужны, только пока трейсы могут быть отобраны (см. выше): без трейсов снимаются. */
+const TRACING_ONLY_INTEGRATIONS: Record<string, true> = { PostgresJs: true }
 
 export interface ServerInitInput {
   dsn: string
@@ -54,12 +66,25 @@ export interface ServerInitInput {
 }
 
 /*
- * Дефолты SDK минус возвращённое, плюс наши. Явные экземпляры идут последними: фильтр дубликатов по
- * имени оставляет последний, поэтому BunServer и Redis заменяют одноимённые дефолты.
+ * Хоть один корневой спан может стать транзакцией: tracesSampler отдаёт `tracesSampleRate` корням запросов и
+ * `queueTracesSampleRate` корням очередей (utils/traces-sampler.ts). Нули в обоих — трейсов нет и быть не может.
  */
-export function buildServerIntegrations(defaults: Integration[], cachePrefix: string): Integration[] {
+export function canSampleTraces(input: Pick<ServerInitInput, 'tracesSampleRate' | 'queueTracesSampleRate'>): boolean {
+  return input.tracesSampleRate > 0 || input.queueTracesSampleRate > 0
+}
+
+/*
+ * Дефолты SDK минус возвращённое (и минус то, что нужно только трейсам, если `tracing` — false), плюс наши. Явные
+ * экземпляры идут последними: фильтр дубликатов по имени оставляет последний, поэтому BunServer и Redis заменяют
+ * одноимённые дефолты.
+ */
+export function buildServerIntegrations(defaults: Integration[], cachePrefix: string, tracing: boolean): Integration[] {
   return [
-    ...defaults.filter(({ name }) => !Object.hasOwn(DROPPED_DEFAULT_INTEGRATIONS, name)),
+    ...defaults.filter(
+      ({ name }) =>
+        !Object.hasOwn(DROPPED_DEFAULT_INTEGRATIONS, name) &&
+        (tracing || !Object.hasOwn(TRACING_ONLY_INTEGRATIONS, name)),
+    ),
     /* Явный экземпляр с настройками, а не дефолт: Bun.serve ядра (публичный и внутренний порт). */
     Sentry.bunServerIntegration({ maxRequestBodySize: 'none', sessions: false }),
     /* Серверы на node:http внутри процесса (Bun не публикует http.server.request.start). */
@@ -89,7 +114,7 @@ export function buildServerSentryOptions(input: ServerInitInput): ServerSentryOp
     release: input.release,
     enabled: input.enabled,
 
-    integrations: (defaults) => buildServerIntegrations(defaults, input.cachePrefix),
+    integrations: (defaults) => buildServerIntegrations(defaults, input.cachePrefix, canSampleTraces(input)),
 
     /* Какие корневые спаны становятся транзакциями — utils/traces-sampler.ts (чистая фабрика, покрыта юнитами). */
     tracesSampler: createTracesSampler({
